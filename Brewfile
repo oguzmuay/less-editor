@@ -9,6 +9,8 @@ brew "mysql-client"
 brew "openjdk@21"
 brew "openjdk"   # jdtls sunucusu Java 25+ ister
 brew "maven"
+brew "imagemagick"  # Neovim görüntü görüntüleyici (snacks.image)
+brew "ghostscript"  # PDF önizleme (snacks.image)
 cask "ghostty"
 
 # Yazı tipleri (Neovim'de :Font ile seçilir; Berkeley Mono ücretli, elle kurulur)

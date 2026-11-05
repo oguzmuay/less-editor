@@ -44,6 +44,7 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/firstrun/init.lua       LESS ilk açılış ekranı: eklenti ilerlemesi, Mason/LSP kurulum bildirimi
   lua/previewtab/init.lua     VS Code tarzı önizleme tab'ı: open(path, open_fn, keep), get(), promote(buf), neotree()
   lua/plugins/previewtab.lua  previewtab setup (virtual plugin; bufferline opts'ta yamaları kurar)
+  lua/plugins/image.lua       snacks.image: görsel dosyaları/markdown görselleri (kitty graphics), Ghostty yedek tespiti
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
   lua/plugins/font.lua        font setup (virtual lazy plugin)
   KISAYOLLAR.md               kullanıcıya yönelik kısayol özeti
@@ -238,6 +239,13 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   `BufWritePost`, aynı dosyada ikinci açma, pin (`groups.add_element("pinned")` sarılı), Snacks picker
   `actions.jump/confirm` (aynı buffer'da kalan `lsp_*` hariç). İtalik: `highlights.for_element` sarılı, `<grup>Preview`
   kopyası. Durum yalnız bellekte (oturumda normal tab). **bufferline/Snacks iç API'lerine dayanır, güncellemede kontrol et.**
+- **Görseller (`plugins/image.lua`, snacks.image):** `image = { enabled = true }` snacks `opts` fonksiyonuyla (LazyVim
+  `config`'i ezilmez). Unicode placeholder modu: resim metin hücresi gibi çizilir → pencereye kırpılır, panellere taşmaz,
+  buffer görünmezse kaybolur, `Snacks.bufdelete` `a=d` gönderir. Tespit: XTVERSION yanıtı gelmezse `TERM=xterm-ghostty`
+  Ghostty sayılır (ilk resimde ≤1 sn). Satır içi çizim yalnız markdown'da; html/jsx/tsx/vue/css'te imleç `src=`/`url()`
+  üstündeyken yüzen pencere. `BufModifiedSet` düzeltmesi: snacks boş buffer'a `set_lines` yapıp modified işaretliyordu
+  (önizleme hemen normal tab'a dönüyordu). problems `excluded_filetypes`'ta `image`. Bağımlılık: imagemagick +
+  ghostscript (PDF; Homebrew imagemagick getirmez), Brewfile'da. svg dosya olarak açılmaz (metin dosyası kalır).
 - **Git blame:** `git blame --porcelain --contents -` buffer içeriğiyle çalışır (kaydedilmemiş satırlar kaymaz).
   Lens tanımları LSP `documentSymbol`'den gelir; metot/fonksiyon içine inilmez (callback'ler lens almaz).
 - **jdtls (`plugins/java.lua`):** Mason'ın kurduğu güncel jdtls **Java 25+ ister**; sistemdeki Java 21 ile başlatılırsa
@@ -424,6 +432,7 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 41 | **Ortadaki kod penceresi `:q` vb. ile kapanmaz** | Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q / `Space q q`. `nvim dosya` ve git commit editöründe koruma kapalı. |
 | 42 | **`:UIReset`** panel boyutlarını varsayılana döndürür | AI sütunu kodu kapatacak kadar genişlediğinde. Tuş **Cmd+Shift+0** (`csi:48;10u` → `<S-D-0>`; klavye düzeninden bağımsız, TR'de Shift+0 `=` olurdu). |
 | 43 | **Lisans: MIT** (kök `LICENSE`), Ghostty ile aynı | Kullanıcı: Ghostty'den daha serbest bir şey seçilmemeli; MIT zaten aynı. Ghostty'nin MIT metni `app/ghostty/LICENSE` ve pakette `GHOSTTY-LICENSE` olarak korunur. |
+| 44 | **Görsel görüntüleme** (snacks.image, Ghostty kitty graphics) | png/jpg/gif/bmp/webp/tiff/heic/avif/icns/pdf ilk sayfa kod penceresinde; markdown'da satır içi; diğer dillerde imleç üstünde yüzen önizleme. Önizleme tab'ı kurallarına uyar. |
 
 ## Açık konular / öneriler
 
@@ -484,4 +493,7 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
 - Şerit/koruma: yeni uzun mesaj Run/Git History'yi gizler (tek araç kuralı). Kod penceresi koruması mapping içinden
   `<Cmd>q<CR>`, `:bd`/`:only` ve Lua `nvim_win_close` yollarını kapsamaz. `restore` içinde hata olursa `winfixwidth` o turda
   kapalı kalabilir. Sağ sütuna %50 üst sınır yok. Gerçek temiz ilk açılış bu değişiklikten sonra çalıştırılmadı.
+- Görseller: Ghostty/LESS.app'te gözle bakılmadı (pty'de kitty dizileri doğrulandı); mp4/mov (ilk kare) ve heic
+  denenmedi; noice şeridi ve tabpage geçişinde ayrıca test edilmedi; LaTeX/Mermaid ve css/scss/vue/svelte parser'ları
+  yok (o dillerde görsel yok); her `:Files` aç-kapada görsel yeniden çizilir.
 - Node.js Homebrew'dan değil `~/.local/bin` altından geliyor; Mason'ın npm tabanlı araçları için Node gerekli.

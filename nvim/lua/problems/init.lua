@@ -30,6 +30,7 @@ M.excluded_filetypes = {
   "snacks_win",
   "which-key",
   "diff",
+  "image",
   "dap-repl",
   "dapui_scopes",
   "dapui_breakpoints",

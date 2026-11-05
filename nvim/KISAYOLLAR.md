@@ -317,6 +317,12 @@ Kaydetme, odak dönüşü ve dışarıdan (ör. Claude) dosya değişikliklerind
 
 Commit için: `Space g g` (Lazygit) ya da terminal.
 
+### Görseller
+
+Files'tan bir görsel (png, jpg, gif, webp, pdf ilk sayfa…) açınca kod editöründe resim olarak görünür (önizleme tab'ı
+kuralları geçerli; Cmd+W kapatır). Markdown'daki `![...](...)` görselleri satırın altında çizilir; HTML/JSX/CSS'te
+imleci görsel yolunun üstüne getirince küçük önizleme açılır. Görseller düzenlenemez; svg metin dosyası olarak açılır.
+
 ### Diff tab'ı
 
 Diff'ler ekranı kaplamaz; kod editöründe normal bir tab olur (paneller yerinde kalır).
