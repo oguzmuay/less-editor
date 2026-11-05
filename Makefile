@@ -1,6 +1,8 @@
 # LESS editor: build/run/install the Ghostty-based macOS app (app/ghostty is a git subtree).
 GHOSTTY  := app/ghostty
 ZIG_VER  := $(shell sed -n 's/.*minimum_zig_version = "\([0-9]*\.[0-9]*\)\..*/\1/p' $(GHOSTTY)/build.zig.zon)
+# Ghostty reads the version from git tags otherwise and panics on LESS tags (v0.x).
+GHOSTTY_VER := $(shell sed -n 's/^    \.version = "\(.*\)",/\1/p' $(GHOSTTY)/build.zig.zon)
 BUILT    := $(GHOSTTY)/macos/build/ReleaseLocal/Ghostty.app
 APP      := build/LESS.app
 PREFIX   ?= /Applications
@@ -19,7 +21,7 @@ check:
 	@command -v nvim >/dev/null || echo "warning: Neovim not found (brew install neovim); LESS windows need it"
 
 app: check
-	cd $(GHOSTTY) && zig build -Doptimize=ReleaseFast -Dxcframework-target=$(XCFW) -Demit-macos-app=true
+	cd $(GHOSTTY) && zig build -Doptimize=ReleaseFast -Dxcframework-target=$(XCFW) -Demit-macos-app=true -Dversion-string=$(GHOSTTY_VER)
 	app/scripts/brand.sh $(BUILT) $(APP)
 
 run:

@@ -127,6 +127,8 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
     `bin/less-editor` LESS varsayılanlarını `--config-file` ile verir; kurulum `~/.local/opt/less-editor`. Release yalnız
     macOS başarılıysa çıkar; Linux düşerse notlara yazılır.
   - Windows yok: Ghostty'nin Windows sürümü yok; config-only paket dürüst olmazdı (Cmd→CSI, zsh launcher, osascript).
+  - Ghostty `zig build` sürümü git tag'inden okur ve `v<ghostty sürümü>` dışındaki tag'de panic eder → Makefile
+    `-Dversion-string=$(GHOSTTY_VER)` (`build.zig.zon`'dan, şu an 1.4.0) verir. LESS sürümü ayrı (`brand.sh`).
   - Yerelde: `make dist` (arm64 zip + DMG `build/dist/`); `XCFW ?= native`.
 
 ## Kod kuralları
