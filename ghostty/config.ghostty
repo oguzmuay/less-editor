@@ -11,7 +11,7 @@ copy-on-select = clipboard
 confirm-close-surface = false
 shell-integration-features = no-cursor
 
-# --- Paneller: Cmd+1..6 -> Neovim -------------------------------------------
+# --- Paneller: Cmd+0..7 -> Neovim -------------------------------------------
 keybind = super+1=csi:49;9u
 keybind = super+digit_1=csi:49;9u
 keybind = super+2=csi:50;9u
@@ -26,6 +26,8 @@ keybind = super+6=csi:54;9u
 keybind = super+digit_6=csi:54;9u
 keybind = super+7=csi:55;9u
 keybind = super+digit_7=csi:55;9u
+keybind = super+0=csi:48;9u
+keybind = super+digit_0=csi:48;9u
 
 # --- Editör kısayolları -> Neovim -------------------------------------------
 keybind = super+s=csi:115;9u
@@ -35,6 +37,7 @@ keybind = super+slash=csi:47;9u
 keybind = super+shift+f=csi:102;10u
 keybind = super+shift+e=csi:101;10u
 keybind = super+e=csi:101;9u
+keybind = super+p=csi:112;9u
 
 # --- Satır/dosya başı-sonu -> Neovim (Option+Ok kelime atlama Ghostty varsayılanı: ESC b / ESC f)
 keybind = super+arrow_left=csi:1;9D
@@ -42,6 +45,19 @@ keybind = super+arrow_right=csi:1;9C
 keybind = super+arrow_up=csi:1;9A
 keybind = super+arrow_down=csi:1;9B
 
+# --- Editör tabları: Cmd+Shift+Sol/Sağ ve Cmd+Option+Sol/Sağ -> Neovim
+keybind = super+shift+arrow_left=csi:1;10D
+keybind = super+shift+arrow_right=csi:1;10C
+keybind = super+alt+arrow_left=csi:1;11D
+keybind = super+alt+arrow_right=csi:1;11C
+
+# --- Cmd+T -> Neovim (Claude/Terminal panelinde yeni sekme); Ghostty'nin yeni sekmesi Cmd+Shift+T'ye taşındı
+keybind = super+t=csi:116;9u
+keybind = super+shift+t=new_tab
+
 # Ghostty sekmeleri arasında geçiş Cmd+1..9 yerine Ctrl+Tab ile:
 keybind = ctrl+tab=next_tab
 keybind = ctrl+shift+tab=previous_tab
+
+# --- Yazı tipi: Neovim'de :Font bu dosyayı yazar (yoksa varsayılan JetBrains Mono) ---------
+config-file = ?~/.config/ghostty/font.ghostty

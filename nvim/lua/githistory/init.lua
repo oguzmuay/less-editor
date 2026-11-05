@@ -9,15 +9,36 @@ local state = {
   root = nil,
   file = nil,
   all = false,
+  ---@type string[]
+  repos = {},
   line_map = {},
   watcher = nil,
 }
 
---- Neovim'in çalışma klasörünün git kökünü döndürür.
+--- Klasörün (varsayılan: Neovim'in çalışma klasörü) git kökünü döndürür.
+---@param dir string?
 ---@return string?
-local function git_root()
-  local res = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = vim.fn.getcwd(), text = true }):wait()
+local function git_root(dir)
+  dir = dir or vim.fn.getcwd()
+  if vim.fn.isdirectory(dir) == 0 then
+    return nil
+  end
+  local res = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = dir, text = true }):wait()
   return res.code == 0 and vim.trim(res.stdout) or nil
+end
+
+--- Projedeki git repoları: workspace açıksa her kökün reposu (tekrarsız), değilse çalışma klasörünün reposu.
+---@return string[]
+function M.repos()
+  local ok, ws = pcall(require, "workspaces")
+  local repos = {}
+  for _, dir in ipairs(ok and ws.roots() or { vim.fn.getcwd() }) do
+    local root = git_root(dir)
+    if root and not vim.tbl_contains(repos, root) then
+      table.insert(repos, root)
+    end
+  end
+  return repos
 end
 
 --- git log çıktısını okuyup satır satır commit bilgisine çevirir.
@@ -72,9 +93,12 @@ function M.refresh()
   if not (buf and vim.api.nvim_buf_is_valid(buf)) or not state.root then
     return
   end
-  local mode = state.file and ("dosya: " .. vim.fn.fnamemodify(state.file, ":t")) or (state.all and "tüm dallar" or "mevcut dal")
-  local header = " Git History · " .. mode
-  local hint = "   ⏎ diff · f dosya/repo · a tüm dallar · y hash kopyala · R yenile · q kapat"
+  local mode = state.file and ("file: " .. vim.fn.fnamemodify(state.file, ":t")) or (state.all and "all branches" or "current branch")
+  local multi = #state.repos > 1
+  local header = " Git History · " .. (multi and (vim.fs.basename(state.root) .. " · ") or "") .. mode
+  local hint = "   ⏎ diff · f file/repo · a all branches · y copy hash · R refresh"
+    .. (multi and " · g choose repo" or "")
+    .. " · q close"
   local lines, marks = { header .. hint }, { { 0, 0, #header, "Title" }, { 0, #header, -1, "Comment" } }
   state.line_map = {}
   for _, e in ipairs(load()) do
@@ -135,10 +159,42 @@ local function current_hash()
   return state.line_map[vim.api.nvim_win_get_cursor(0)[1]]
 end
 
---- Commit'in değişikliklerini diffview ile yeni bir sekmede açar.
+--- Commit'in değişikliklerini kod editöründe diff tab'ı olarak açar. Dosya modunda yalnız o dosya gösterilir;
+--- dosya o commit'te eski adıyla değiştiyse (`--follow`) tüm commit'e düşülür.
 ---@param hash string
 local function open_commit(hash)
-  vim.cmd(("DiffviewOpen %s^!"):format(hash))
+  local gitdiff = require("gitdiff")
+  if not (state.file and gitdiff.open({ rev = hash, path = state.file, cwd = state.root })) then
+    gitdiff.open({ rev = hash, cwd = state.root })
+  end
+end
+
+--- Paneli başka bir repoya geçirir (dosya modu sıfırlanır, izleyici yeni repoya taşınır).
+---@param root string
+local function set_root(root)
+  if root ~= state.root then
+    state.root, state.file = root, nil
+    watch()
+  end
+end
+
+--- Birden fazla repo varsa (workspace) hangisinin geçmişinin gösterileceğini seçtirir.
+local function choose_repo()
+  if #state.repos < 2 then
+    vim.notify("No other git repository to choose", vim.log.levels.INFO)
+    return
+  end
+  vim.ui.select(state.repos, {
+    prompt = "Git repository",
+    format_item = function(r)
+      return (r == state.root and "● " or "  ") .. vim.fn.fnamemodify(r, ":~")
+    end,
+  }, function(root)
+    if root then
+      set_root(root)
+      M.refresh()
+    end
+  end)
 end
 
 --- Panel buffer'ını oluşturur ve tuş/mouse eşlemelerini bağlar.
@@ -162,12 +218,18 @@ local function create_buf()
   map("<2-LeftMouse>", on_commit(open_commit))
   map("y", on_commit(function(hash)
     vim.fn.setreg("+", hash)
-    vim.notify("Kopyalandı: " .. hash)
+    vim.notify("Copied: " .. hash)
   end))
   map("f", function()
-    state.file = not state.file and require("workbench").code_file() or nil
+    local file = not state.file and require("workbench").code_file() or nil
+    local root = file and git_root(vim.fs.dirname(file))
+    if root and root ~= state.root then
+      set_root(root)
+    end
+    state.file = file
     M.refresh()
   end)
+  map("g", choose_repo)
   map("a", function()
     state.all = not state.all
     M.refresh()
@@ -189,16 +251,18 @@ function M.find_panel()
   end
 end
 
---- Paneli alt şeride açar.
+--- Paneli alt şeride açar. Workspace'te birden fazla repo varsa önce kod penceresindeki dosyanın reposu,
+--- yoksa ilk repo gösterilir; `g` ile değiştirilir.
 function M.open_panel()
-  local root = git_root()
-  if not root then
-    vim.notify("Bu klasör bir git reposu değil", vim.log.levels.WARN)
+  state.repos = M.repos()
+  if #state.repos == 0 then
+    vim.notify("This folder is not a git repository", vim.log.levels.WARN)
     return
   end
-  if root ~= state.root then
-    state.root, state.file = root, nil
-    watch()
+  if not vim.tbl_contains(state.repos, state.root) then
+    local file = require("workbench").code_file()
+    local root = file and git_root(vim.fs.dirname(file))
+    set_root(vim.tbl_contains(state.repos, root) and root or state.repos[1])
   end
   if not (state.buf and vim.api.nvim_buf_is_valid(state.buf)) then
     state.buf = create_buf()

@@ -2,8 +2,9 @@ local M = {}
 
 local state = {
   code_win = nil,
-  shell_buf = nil,
 }
+
+local schedule_arrange
 
 --- Pencere yüzen (floating) değil ve içinde normal bir dosya buffer'ı varsa "kod penceresi" sayılır.
 ---@param win integer
@@ -64,7 +65,7 @@ local function panel(find, open, close)
   end
   if win == vim.api.nvim_get_current_win() then
     close(win)
-    M.code()
+    M.code({ pinned = false })
   else
     focus(win)
   end
@@ -72,6 +73,7 @@ end
 
 --- Son kullanılan kod penceresini takip eden autocmd'leri ve terminal davranışlarını kurar.
 function M.setup()
+  require("termtabs").setup()
   local group = vim.api.nvim_create_augroup("workbench", { clear = true })
   vim.api.nvim_create_autocmd("WinEnter", {
     group = group,
@@ -82,6 +84,12 @@ function M.setup()
       end
     end,
   })
+  vim.api.nvim_create_autocmd({ "BufWinEnter", "TermOpen", "WinNew", "WinResized" }, {
+    group = group,
+    callback = function()
+      schedule_arrange()
+    end,
+  })
   vim.api.nvim_create_autocmd({ "WinEnter", "BufWinEnter" }, {
     group = group,
     pattern = "term://*",
@@ -89,6 +97,13 @@ function M.setup()
       vim.cmd.startinsert()
     end,
   })
+  vim.api.nvim_create_autocmd("SessionLoadPost", {
+    group = group,
+    callback = function()
+      vim.schedule(M.restore_pins)
+    end,
+  })
+  vim.schedule(M.restore_pins)
 end
 
 --- Cmd+1: Dosya gezgini (neo-tree).
@@ -97,89 +112,164 @@ function M.files()
     return find_ft("neo-tree")
   end, function()
     vim.cmd("Neotree focus reveal")
+    M.arrange_layout()
   end, function()
     vim.cmd("Neotree close")
   end)
 end
 
---- Cmd+2: Son kullanılan kod penceresi. Yoksa ilk uygun pencere, o da yoksa yeni bir pencere.
-function M.code()
-  local win = state.code_win
-  if not (win and is_code_win(win) and vim.api.nvim_win_get_tabpage(win) == vim.api.nvim_get_current_tabpage()) then
-    win = find_win(function(w)
-      return is_code_win(w)
-    end)
+--- bufferline'ın grup modülünü döndürür (gerekirse eklentiyi yükler); yoksa nil.
+---@return table?
+local function bufferline_groups()
+  local ok, groups = pcall(require, "bufferline.groups")
+  return ok and groups or nil
+end
+
+--- Tab çubuğunda (bufferline sırasıyla) en baştaki pinli buffer'ı döndürür; pinli tab yoksa nil.
+--- Sıra için bufferline durumu önce tazelenir (tabline henüz çizilmemiş olabilir).
+---@return integer?
+local function first_pinned_buf()
+  local groups = bufferline_groups()
+  if not groups or type(_G.nvim_bufferline) ~= "function" then
+    return nil
   end
+  pcall(_G.nvim_bufferline)
+  for _, item in ipairs(require("bufferline.state").components or {}) do
+    local el = item.as_element and item:as_element()
+    if el and vim.api.nvim_buf_is_valid(el.id) and groups._is_pinned(el) then
+      return el.id
+    end
+  end
+end
+
+--- Kod penceresinde en baştaki pinli tab'ı gösterir. Pinli buffer başka bir kod penceresinde zaten açıksa o pencereye
+--- geçer. Pinli tab yoksa hiçbir şey yapmaz.
+---@param win integer odaktaki kod penceresi
+local function show_first_pinned(win)
+  local buf = first_pinned_buf()
+  if not buf or vim.api.nvim_win_get_buf(win) == buf then
+    return
+  end
+  local shown = find_win(function(w, b)
+    return b == buf and is_code_win(w)
+  end)
+  if shown then
+    focus(shown)
+  else
+    vim.api.nvim_win_set_buf(win, buf)
+  end
+end
+
+--- Cmd+2 / `:Code`: Son kullanılan kod penceresi. Yoksa ilk uygun pencere, o da yoksa yeni bir pencere.
+--- Odak bir panelden (kod penceresi dışından) geliyorsa ve pinli tab varsa en baştaki pinli tab gösterilir
+--- (`opts.pinned = false` bunu kapatır, `opts.force = true` odak zaten koddayken de uygular).
+--- Tab gezme (Cmd+Shift+Sol/Sağ) ve panel kapatma gibi iç kullanımlar `pinned = false` ile çağırır.
+---@param opts? { pinned?: boolean, force?: boolean }
+function M.code(opts)
+  opts = opts or {}
+  local from_code = is_code_win(vim.api.nvim_get_current_win())
+  local win = M.code_win()
   if win then
     focus(win)
-    return
+  else
+    vim.cmd("topleft vnew")
+    win = vim.api.nvim_get_current_win()
   end
-  vim.cmd("topleft vnew")
+  if opts.pinned ~= false and (opts.force or not from_code) then
+    show_first_pinned(win)
+  end
 end
 
---- Claude Code terminalinin penceresini döndürür.
+--- Proje/workspace açılışı gibi "koda geçiş" anları için: kod penceresine odaklanır ve pinli tab varsa en baştakini
+--- gösterir (odak zaten kod penceresinde olsa bile).
+function M.focus_code()
+  M.code({ force = true })
+end
+
+--- Cmd+P: Kod penceresindeki tab'ı (bufferline buffer'ı) pinler / pin'i kaldırır. Odak bir paneldeyse son kullanılan
+--- kod penceresindeki tab'a uygulanır ve bildirim gösterilir. Pinli tablar bufferline'da başa alınır ve 📌 taşır.
+function M.toggle_pin()
+  local cur = vim.api.nvim_get_current_win()
+  local win = is_code_win(cur) and cur or M.code_win()
+  local groups = bufferline_groups()
+  if not win or not groups then
+    vim.notify("No editor tab to pin", vim.log.levels.WARN)
+    return
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local el = { id = buf }
+  local was_pinned = groups._is_pinned(el)
+  if was_pinned then
+    groups.remove_element("pinned", el)
+  else
+    groups.add_element("pinned", el)
+  end
+  require("bufferline.ui").refresh()
+  if win ~= cur then
+    local name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t")
+    vim.notify(("%s tab: %s"):format(was_pinned and "Unpinned" or "Pinned", name ~= "" and name or "[No Name]"))
+  end
+end
+
+--- Oturumla gelen pinleri (`vim.g.BufferlinePinnedBuffers`, `sessionoptions` içindeki `globals` ile kaydedilir)
+--- bufferline'a geri yükler. bufferline bunu kendisi yalnızca ilk `SessionLoadPost`'ta ve kendi yüklenmesinden sonra
+--- yapar; workspace değiştirme gibi sonraki oturum yüklemeleri ve eklentiden önce yüklenen oturumlar için burada da
+--- yapılır. İdempotenttir.
+function M.restore_pins()
+  local list = vim.g.BufferlinePinnedBuffers
+  local groups = type(list) == "string" and list ~= "" and bufferline_groups()
+  if not groups then
+    return
+  end
+  local by_name = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    by_name[vim.api.nvim_buf_get_name(buf)] = buf
+  end
+  for _, path in ipairs(vim.split(list, ",", { plain = true })) do
+    local buf = by_name[path]
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      pcall(groups.add_element, "pinned", { id = buf })
+    end
+  end
+  require("bufferline.ui").refresh()
+end
+
+--- Claude Code panelinin penceresini döndürür (hangi oturum sekmesi ya da özet gösterilirse gösterilsin).
 ---@return integer?
 local function claude_win()
-  local ok, term = pcall(require, "claudecode.terminal")
-  local buf = ok and term.get_active_terminal_bufnr() or nil
-  if not buf then
-    return
-  end
-  return find_win(function(_, b)
-    return b == buf
-  end)
+  return require("termtabs").win("claude")
 end
 
---- Cmd+3: Sağdaki Claude Code terminali.
+--- Claude panelini gizler; oturumlar arka planda çalışmaya devam eder.
+local function hide_claude()
+  require("termtabs").hide("claude")
+end
+
+--- Cmd+3: Sağdaki Claude Code paneli (oturum sekmeleriyle).
+--- claudecode tembel yüklendiği için önce modülü yükleyip (setup + IDE sunucusu) sonra komutu çağırır.
 function M.claude()
   panel(claude_win, function()
+    pcall(require, "claudecode")
     vim.cmd("ClaudeCodeFocus")
-  end, function()
-    vim.cmd("ClaudeCode")
-  end)
+  end, hide_claude)
 end
 
---- Sağ taraftaki shell terminalinin penceresini döndürür.
+--- Sağ taraftaki terminal panelinin penceresini döndürür.
 ---@return integer?
 local function shell_win()
-  if not (state.shell_buf and vim.api.nvim_buf_is_valid(state.shell_buf)) then
-    return
-  end
-  return find_win(function(_, b)
-    return b == state.shell_buf
-  end)
+  return require("termtabs").win("shell")
 end
 
---- Shell terminalini açar: Claude açıksa onun altına, değilse ekranın sağına yerleşir.
+--- Terminal panelini sağa açar (seçili sekmeyle); hiç terminal yoksa yeni bir shell sekmesi başlatır.
+--- Yerleşimi `arrange_right_column` düzeltir (Claude varsa onun altına).
 local function open_shell()
-  local fresh = not (state.shell_buf and vim.api.nvim_buf_is_valid(state.shell_buf))
-  if fresh then
-    state.shell_buf = vim.api.nvim_create_buf(false, false)
+  local tt = require("termtabs")
+  if not tt.show("shell", true) then
+    tt.new_shell(true)
   end
-  local anchor = claude_win()
-  local win = anchor and vim.api.nvim_open_win(state.shell_buf, true, { split = "below", win = anchor })
-    or vim.api.nvim_open_win(state.shell_buf, true, {
-      split = "right",
-      win = -1,
-      width = math.floor(vim.o.columns * 0.35),
-    })
-  vim.wo[win].winfixwidth = true
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = "no"
-  if fresh then
-    vim.fn.jobstart(vim.o.shell, {
-      term = true,
-      cwd = vim.fn.getcwd(),
-      on_exit = function()
-        state.shell_buf = nil
-      end,
-    })
-  end
-  vim.cmd.startinsert()
 end
 
---- Cmd+4: Sağdaki shell terminali.
+--- Cmd+4: Sağdaki terminal paneli (shell sekmeleriyle).
 function M.shell()
   panel(shell_win, open_shell, function(win)
     vim.api.nvim_win_hide(win)
@@ -209,27 +299,200 @@ function M.bottom_wins()
   return sort_by_position(wins)
 end
 
---- Sağ sütunu (Claude + terminal) ekranın tam boyunda en sağa sabitler.
---- Alt şerit tam genişlikte açıldıktan sonra çağrılır; böylece şerit sağ sütunun altına uzanmaz.
-local function pin_right_column()
-  local wins = vim.tbl_filter(function(w)
-    return w ~= nil
-  end, { claude_win(), shell_win() })
-  if #wins == 0 then
-    return
+--- `winlayout()` düğümü verilen pencerelerden (sırasıyla) oluşuyor mu: tek pencere için yaprak,
+--- birden fazlası için `kind` ("row" | "col") türünde, yalnızca bu yaprakları içeren bir kap.
+---@param node table winlayout düğümü
+---@param kind "row"|"col"
+---@param wins integer[]
+---@return boolean
+local function node_is(node, kind, wins)
+  if #wins == 1 then
+    return node[1] == "leaf" and node[2] == wins[1]
   end
-  sort_by_position(wins)
-  local width = vim.api.nvim_win_get_width(wins[1])
-  local cur = vim.api.nvim_get_current_win()
-  vim.cmd(("noautocmd call win_gotoid(%d) | wincmd L | noautocmd call win_gotoid(%d)"):format(wins[1], cur))
-  for i = 2, #wins do
-    vim.fn.win_splitmove(wins[i], wins[i - 1], { vertical = false, rightbelow = true })
-  end
-  vim.api.nvim_win_set_width(wins[1], width)
+  return node[1] == kind and #node[2] == #wins and vim.iter(ipairs(wins)):all(function(i, w)
+    return node[2][i][1] == "leaf" and node[2][i][2] == w
+  end)
 end
 
---- Buffer'ı alt şeritte açar. Şerit yoksa ekranın altına (sol paneller dahil, sağ sütun hariç) yeni şerit kurar;
---- varsa şeritteki son pencerenin (ya da `after` penceresinin) sağına ekler.
+--- Düzen zaten hedefteyse true. Sağ sütun varsa kök `row[..., col[Claude, terminal]]`; alt şerit de varsa kök tam
+--- olarak `row[col[ana alan, şerit], sağ sütun]`, yoksa `col[ana alan, şerit]`. Sol paneller ve kod ana alandadır.
+---@param right integer[] sağ sütun pencereleri (Claude, terminal)
+---@param strip integer[] alt şerit pencereleri (soldan sağa)
+---@return boolean
+local function layout_ok(right, strip)
+  local root = vim.fn.winlayout()
+  local rest = root
+  if #right > 0 then
+    if root[1] ~= "row" or not node_is(root[2][#root[2]], "col", right) then
+      return false
+    end
+    if #strip == 0 then
+      return true
+    end
+    if #root[2] ~= 2 then
+      return false
+    end
+    rest = root[2][1]
+  end
+  if #strip == 0 or node_is(rest, "row", strip) then
+    return true
+  end
+  return rest[1] == "col" and node_is(rest[2][#rest[2]], "row", strip)
+end
+
+--- Pencereyi ekranın bir kenarına (`J` alt, `L` sağ) tam genişlik/boy taşır; autocmd tetiklemez.
+---@param win integer
+---@param dir "J"|"L"
+local function move_to_edge(win, dir)
+  vim.cmd(("noautocmd call win_gotoid(%d) | wincmd %s"):format(win, dir))
+end
+
+--- `win`'i `target`'ın sağına (`vertical`) ya da altına taşır; autocmd tetiklemez.
+---@param win integer
+---@param target integer
+---@param vertical boolean
+local function move_after(win, target, vertical)
+  vim.cmd(
+    ("noautocmd call win_splitmove(%d, %d, #{vertical: v:%s, rightbelow: v:true})"):format(win, target, vertical)
+  )
+end
+
+--- Düzen doğruyken sağ sütun ve alt şerit pencerelerinin boyutlarını hatırlar. Düzen bozulduğunda (ör. sol panel
+--- tam boy açılıp şeridin solunu kapladığında) anlık boyutlar zaten küçülmüş olduğu için geri yükleme bunları kullanır.
+---@param right integer[]
+---@param strip integer[]
+local function remember_sizes(right, strip)
+  state.sizes = {}
+  for _, w in ipairs(vim.list_extend(vim.list_extend({}, right), strip)) do
+    state.sizes[w] = { width = vim.api.nvim_win_get_width(w), height = vim.api.nvim_win_get_height(w) }
+  end
+end
+
+--- Yeniden düzenlemeden önce korunacak boyutları toplar: sağ sütun genişliği ve (son hariç) yükseklikleri,
+--- sabit genişlikli ana alan pencereleri (neo-tree, DBUI gibi sol paneller `winfixwidth` taşır),
+--- alt şerit yüksekliği ve (son hariç) şerit pencerelerinin genişlikleri. Şerit ve sağ sütun için önce son doğru
+--- düzende hatırlanan boyut (`remember_sizes`) kullanılır; sağ sütun yükseklikleri ancak tüm pencereleri
+--- hatırlanıyorsa geri yüklenir (yeni açılan Claude/terminal varsayılan bölünmeyi alır).
+---@param right integer[]
+---@param strip integer[]
+---@return fun() boyutları geri yükleyen fonksiyon
+local function save_sizes(right, strip)
+  local api = vim.api
+  local known = state.sizes or {}
+  local function size(w, key)
+    return known[w] and known[w][key] or (key == "width" and api.nvim_win_get_width(w) or api.nvim_win_get_height(w))
+  end
+  local skip = {}
+  for _, w in ipairs(vim.list_extend(vim.list_extend({}, right), strip)) do
+    skip[w] = true
+  end
+  local fixed = {}
+  for _, w in ipairs(api.nvim_tabpage_list_wins(0)) do
+    if not skip[w] and api.nvim_win_get_config(w).relative == "" and vim.wo[w].winfixwidth then
+      fixed[w] = api.nvim_win_get_width(w)
+    end
+  end
+  local right_width = #right > 0 and math.max(40, unpack(vim.tbl_map(api.nvim_win_get_width, right)))
+  local right_heights = {}
+  if vim.iter(right):all(function(w)
+    return known[w] ~= nil
+  end) then
+    for i = 1, #right - 1 do
+      right_heights[i] = known[right[i]].height
+    end
+  end
+  local strip_height = #strip > 0 and size(strip[1], "height")
+  local strip_widths = vim.tbl_map(function(w)
+    return size(w, "width")
+  end, vim.list_slice(strip, 1, #strip - 1))
+  return function()
+    if right_width then
+      api.nvim_win_set_width(right[1], right_width)
+    end
+    for w, width in pairs(fixed) do
+      if api.nvim_win_is_valid(w) then
+        api.nvim_win_set_width(w, width)
+      end
+    end
+    if strip_height then
+      api.nvim_win_set_height(strip[1], strip_height)
+    end
+    for i, width in ipairs(strip_widths) do
+      api.nvim_win_set_width(strip[i], width)
+    end
+    for i, height in ipairs(right_heights) do
+      api.nvim_win_set_height(right[i], height)
+    end
+  end
+end
+
+local arranging = false
+
+--- Pencere düzenini zorlar: sağ sütun (üstte Claude, altta terminal) her zaman tam boy en sağda; alt şerit
+--- (Run / Git geçmişi + loglar) sağ sütunun solunda ekranın altında, sol panellerin (Files, Database ve sonradan
+--- açılan her sol panel) altına uzanır. Hedef: `row[col[row[sol panel, kod...], şerit], col[Claude, terminal]]`.
+--- Sol paneller kendi başına tam boy açıldığı için açıldıktan sonra (BufWinEnter/WinNew/WinResized) tekrar çağrılır.
+--- Düzen zaten doğruysa (`winlayout` kontrolü) hiçbir şeye dokunmaz. Yöntem: şeridi `wincmd J` ile en alta, sonra
+--- sağ sütunu `wincmd L` ile en sağa taşımak; sol panel, şerit ve sağ sütun boyutları geri yüklenir.
+function M.arrange_layout()
+  if arranging then
+    return
+  end
+  local right = vim.tbl_filter(function(w)
+    return w ~= nil
+  end, { claude_win(), shell_win() })
+  local strip = M.bottom_wins()
+  if layout_ok(right, strip) then
+    remember_sizes(right, strip)
+    return
+  end
+  arranging = true
+  local cur = vim.api.nvim_get_current_win()
+  local restore = save_sizes(right, strip)
+  local ok, err = pcall(function()
+    if #strip > 0 then
+      move_to_edge(strip[1], "J")
+      for i = 2, #strip do
+        move_after(strip[i], strip[i - 1], true)
+      end
+    end
+    if #right > 0 then
+      move_to_edge(right[1], "L")
+      for i = 2, #right do
+        move_after(right[i], right[i - 1], false)
+      end
+    end
+    restore()
+    remember_sizes(right, strip)
+  end)
+  if vim.api.nvim_win_is_valid(cur) then
+    vim.cmd(("noautocmd call win_gotoid(%d)"):format(cur))
+  end
+  arranging = false
+  if not ok then
+    vim.notify("workbench: could not arrange windows: " .. tostring(err), vim.log.levels.WARN)
+  end
+end
+
+--- Eski ad; `arrange_layout` ile aynı (termtabs gibi çağıranlar için korunur).
+M.arrange_right_column = M.arrange_layout
+
+local arrange_pending = false
+
+--- `arrange_layout`'u bir sonraki döngüye erteler; aynı döngüdeki çok sayıda olayı tek çağrıda birleştirir.
+function schedule_arrange()
+  if arrange_pending then
+    return
+  end
+  arrange_pending = true
+  vim.schedule(function()
+    arrange_pending = false
+    M.arrange_layout()
+  end)
+end
+
+--- Buffer'ı alt şeritte açar. Şerit yoksa ekranın altına (sol paneller dahil, sağ sütun hariç) yeni şerit kurar
+--- (`arrange_layout` ile); varsa şeritteki son pencerenin (ya da `after` penceresinin) sağına ekler.
 ---@param buf integer
 ---@param opts? { enter?: boolean, width?: integer, after?: integer }
 ---@return integer
@@ -247,7 +510,7 @@ function M.open_bottom(buf, opts)
       win = -1,
       height = math.max(10, math.floor(vim.o.lines * 0.3)),
     })
-    pin_right_column()
+    M.arrange_layout()
   end
   for opt, val in pairs({ winfixheight = true, number = false, relativenumber = false, signcolumn = "no" }) do
     vim.wo[win][opt] = val
@@ -261,34 +524,118 @@ function M.db()
     return find_ft("dbui")
   end, function()
     vim.cmd("DBUI")
+    M.arrange_layout()
   end, function()
     vim.cmd("DBUIClose")
   end)
 end
 
---- Cmd+6: Spring Boot uygulamaları paneli.
-function M.spring()
-  local spring = require("spring")
-  panel(spring.find_panel, spring.open_panel, spring.close_panel)
+--- Alt şerit tek seferde tek araç gösterir: yeni araç açılmadan önce şeritteki tüm pencereler (loglar dahil) gizlenir.
+---@param open fun()
+---@return fun()
+local function exclusive_bottom(open)
+  return function()
+    for _, win in ipairs(M.bottom_wins()) do
+      if #vim.api.nvim_tabpage_list_wins(0) > 1 then
+        vim.api.nvim_win_hide(win)
+      end
+    end
+    open()
+  end
 end
 
---- Cmd+7: Git geçmişi paneli.
-function M.git()
+--- Cmd+6: Run paneli (Spring Boot uygulamaları, Node script'leri).
+function M.runner()
+  local runner = require("runner")
+  panel(runner.find_panel, exclusive_bottom(runner.open_panel), runner.close_panel)
+end
+
+--- Cmd+7: Git History paneli (alt şerit).
+function M.git_history()
   local git = require("githistory")
-  panel(git.find_panel, git.open_panel, git.close_panel)
+  panel(git.find_panel, exclusive_bottom(git.open_panel), git.close_panel)
+end
+
+--- Cmd+0: Git paneli (commit'lenmemiş değişiklikler, stage/unstage). Files ve DB gibi solda tam boy açılır;
+--- diğer sol panellerle yan yana durabilir.
+function M.git()
+  local git = require("gitstatus")
+  panel(git.find_panel, function()
+    git.open_panel()
+    M.arrange_layout()
+  end, git.close_panel)
+end
+
+local right_click = {}
+
+--- Panellerin sağ tık menüsü için ortak global `<RightMouse>` eşlemesi. Buffer-yerel olamaz: panel odakta
+--- değilken buffer-yerel eşleme devreye girmez ve PopUp açılırdı. `handler(getmousepos())` tıklamayı kendi
+--- panelinde yakaladıysa true döner (eşleme `<LeftMouse>` ile imleci oraya taşır); hiçbiri yakalamazsa varsayılan
+--- `<RightMouse>` (PopUp). Aynı `name` tekrar kaydedilirse eskisinin yerine geçer. Başka bir eklenti global
+--- `<RightMouse>` kurmuşsa ona dokunulmaz.
+---@param name string
+---@param handler fun(pos: table): boolean
+function M.on_right_click(name, handler)
+  local first = next(right_click) == nil
+  right_click[name] = handler
+  if not first or vim.fn.maparg("<RightMouse>", "n") ~= "" then
+    return
+  end
+  vim.keymap.set("n", "<RightMouse>", function()
+    local pos = vim.fn.getmousepos()
+    for _, h in pairs(right_click) do
+      if h(pos) then
+        return "<LeftMouse>"
+      end
+    end
+    return "<RightMouse>"
+  end, { expr = true, desc = "Panel action menu" })
+end
+
+--- Son kullanılan kod penceresini döndürür; geçersizse mevcut sekmedeki ilk kod penceresini.
+---@return integer?
+function M.code_win()
+  local win = state.code_win
+  if win and is_code_win(win) and vim.api.nvim_win_get_tabpage(win) == vim.api.nvim_get_current_tabpage() then
+    return win
+  end
+  return find_win(function(w)
+    return is_code_win(w)
+  end)
 end
 
 --- Git geçmişinde "sadece bu dosya" modu için son kullanılan kod penceresindeki dosyanın yolunu döndürür.
 ---@return string?
 function M.code_file()
-  local win = state.code_win
-  if not (win and is_code_win(win)) then
-    win = find_win(function(w)
-      return is_code_win(w)
-    end)
-  end
+  local win = M.code_win()
   local name = win and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) or ""
   return name ~= "" and name or nil
+end
+
+--- Saf toggle: panel açıksa (odakta olmasa bile) kapatır, kapalıysa açar.
+--- `name`: "files" | "claude" | "shell" | "db" | "runner" | "git_history" | "git".
+---@param name string
+function M.toggle(name)
+  local panels = {
+    files = { find = function() return find_ft("neo-tree") end, close = function() vim.cmd("Neotree close") end },
+    claude = { find = claude_win, close = hide_claude },
+    shell = { find = shell_win, close = vim.api.nvim_win_hide },
+    db = { find = function() return find_ft("dbui") end, close = function() vim.cmd("DBUIClose") end },
+    runner = { find = function() return require("runner").find_panel() end, close = function(w) require("runner").close_panel(w) end },
+    git_history = { find = function() return require("githistory").find_panel() end, close = function(w) require("githistory").close_panel(w) end },
+    git = { find = function() return require("gitstatus").find_panel() end, close = function(w) require("gitstatus").close_panel(w) end },
+  }
+  local p = assert(panels[name], "unknown panel: " .. name)
+  local win = p.find()
+  if not win then
+    M[name]()
+    return
+  end
+  local was_current = win == vim.api.nvim_get_current_win()
+  p.close(win)
+  if was_current or not vim.api.nvim_win_is_valid(vim.api.nvim_get_current_win()) then
+    M.code({ pinned = false })
+  end
 end
 
 return M

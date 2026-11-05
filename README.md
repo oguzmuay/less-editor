@@ -14,3 +14,4 @@ Mevcut `~/.config/nvim` ve Ghostty config'i varsa `*.backup-<tarih>` olarak kena
 
 - Kısayollar: [nvim/KISAYOLLAR.md](nvim/KISAYOLLAR.md)
 - Kararlar ve teknik notlar: [CLAUDE.md](CLAUDE.md)
+- Bekleyen öneriler: [ONERILER.md](ONERILER.md)

@@ -4,18 +4,21 @@
 
 local wb = require("workbench")
 wb.setup()
+require("workbench.commands").setup()
+require("gitblame").setup()
 
 local map = vim.keymap.set
 local nt = { "n", "t", "i", "v" }
 
--- Paneller (Ghostty, Cmd+1..6'yı <D-1>..<D-6> olarak iletir)
+-- Paneller (Ghostty, Cmd+0..7'yi <D-0>..<D-7> olarak iletir)
 map(nt, "<D-1>", wb.files, { desc = "Panel: Files" })
 map(nt, "<D-2>", wb.code, { desc = "Panel: Code" })
 map(nt, "<D-3>", wb.claude, { desc = "Panel: Claude Code" })
 map(nt, "<D-4>", wb.shell, { desc = "Panel: Terminal" })
 map(nt, "<D-5>", wb.db, { desc = "Panel: Database" })
-map(nt, "<D-6>", wb.spring, { desc = "Panel: Spring Boot" })
-map(nt, "<D-7>", wb.git, { desc = "Panel: Git History" })
+map(nt, "<D-6>", wb.runner, { desc = "Panel: Run" })
+map(nt, "<D-7>", wb.git_history, { desc = "Panel: Git History" })
+map(nt, "<D-0>", wb.git, { desc = "Panel: Git" })
 
 -- Leader karşılıkları (Cmd kullanılamayan yerler için)
 map("n", "<leader>1", wb.files, { desc = "Panel: Files" })
@@ -23,9 +26,11 @@ map("n", "<leader>2", wb.code, { desc = "Panel: Code" })
 map("n", "<leader>3", wb.claude, { desc = "Panel: Claude Code" })
 map("n", "<leader>4", wb.shell, { desc = "Panel: Terminal" })
 map("n", "<leader>5", wb.db, { desc = "Panel: Database" })
-map("n", "<leader>6", wb.spring, { desc = "Panel: Spring Boot" })
-map("n", "<leader>7", wb.git, { desc = "Panel: Git History" })
-map("n", "<leader>j", function() require("spring").pick() end, { desc = "Spring Boot: run/stop" })
+map("n", "<leader>6", wb.runner, { desc = "Panel: Run" })
+map("n", "<leader>7", wb.git_history, { desc = "Panel: Git History" })
+map("n", "<leader>0", wb.git, { desc = "Panel: Git" })
+map("n", "<leader>ga", "<cmd>GitBlame<cr>", { desc = "Toggle Git Blame (annotate)" })
+map("n", "<leader>j", function() require("runner").pick() end, { desc = "Run: pick item → action" })
 
 -- Editör
 map({ "n", "i", "v" }, "<D-s>", "<cmd>w<cr><esc>", { desc = "Save" })
@@ -46,6 +51,7 @@ vim.cmd([[
   anoremenu PopUp.Find\ References <cmd>lua Snacks.picker.lsp_references()<cr>
   anoremenu PopUp.Rename\ Symbol <cmd>lua vim.lsp.buf.rename()<cr>
   anoremenu PopUp.Code\ Action <cmd>lua vim.lsp.buf.code_action()<cr>
+  anoremenu PopUp.Annotate\ with\ Git\ Blame <cmd>GitBlame<cr>
   anoremenu PopUp.-claude- <Nop>
   nnoremenu PopUp.Add\ File\ to\ Claude <cmd>ClaudeCodeAdd %<cr>
   vnoremenu PopUp.Send\ to\ Claude :ClaudeCodeSend<cr>
@@ -69,6 +75,24 @@ map("i", "<D-Up>", "<C-Home>", { desc = "File start" })
 map("i", "<D-Down>", "<C-End>", { desc = "File end" })
 map("t", "<D-Left>", "<C-a>", { desc = "Line start" })
 map("t", "<D-Right>", "<C-e>", { desc = "Line end" })
+
+-- Tablar: Cmd+Shift+Sol/Sağ veya Cmd+Option+Sol/Sağ. Claude/Terminal panelindeyken o panelin sekmeleri,
+-- başka yerde editör tabları (diğer panellerden basılırsa önce koda geçer)
+local termtabs = require("termtabs")
+for _, lhs in ipairs({ "<S-D-Left>", "<M-D-Left>" }) do
+  map(nt, lhs, function()
+    if not termtabs.cycle(-1) then wb.code({ pinned = false }); vim.cmd("BufferLineCyclePrev") end
+  end, { desc = "Previous tab" })
+end
+for _, lhs in ipairs({ "<S-D-Right>", "<M-D-Right>" }) do
+  map(nt, lhs, function()
+    if not termtabs.cycle(1) then wb.code({ pinned = false }); vim.cmd("BufferLineCycleNext") end
+  end, { desc = "Next tab" })
+end
+-- Cmd+P: editör tab'ını pinle / pin'i kaldır (panelden basılırsa son kod penceresindeki tab)
+map(nt, "<D-p>", wb.toggle_pin, { desc = "Pin / unpin editor tab" })
+-- Cmd+T: Claude panelinde yeni Claude oturumu, Terminal panelinde yeni shell sekmesi, başka yerde yeni boş buffer
+map(nt, "<D-t>", termtabs.new_tab, { desc = "New tab (Claude / terminal / buffer)" })
 
 -- Kelime atlama: Option+Sol/Sağ (Ghostty ESC b / ESC f gönderir; terminalde shell'e aynen gider)
 map({ "n", "v" }, "<M-b>", "b", { desc = "Word back" })

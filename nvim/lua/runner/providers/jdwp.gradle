@@ -1,0 +1,9 @@
+// Run paneli debug modu: -PrunnerJdwp=<jdwp seçenekleri> verilirse her projedeki bootRun görevine JDWP ajanı ekler.
+def jdwp = gradle.startParameter.projectProperties.get("runnerJdwp")
+if (jdwp) {
+  gradle.allprojects { project ->
+    project.tasks.matching { it.name == "bootRun" }.configureEach { task ->
+      task.jvmArgs("-agentlib:jdwp=" + jdwp)
+    }
+  }
+}
