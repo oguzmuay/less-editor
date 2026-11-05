@@ -1,5 +1,5 @@
 --- Workspaces (çoklu kök): diskte farklı yerlerdeki klasörleri tek proje gibi açar. Mantık `lua/workspaces/` altında;
---- bu dosya yalnızca eklenti bağlantılarını kurar (neo-tree yamaları, snacks dashboard ve picker).
+--- bu dosya yalnızca eklenti bağlantılarını kurar (neo-tree yamaları, snacks picker).
 return {
   {
     name = "workspaces",
@@ -32,23 +32,6 @@ return {
       { "<leader>fW", function() require("workspaces.ui").manage() end, desc = "Manage workspaces" },
     },
     opts = function(_, opts)
-      local keys = vim.tbl_get(opts, "dashboard", "preset", "keys")
-      if keys then
-        local pos = #keys
-        for i, k in ipairs(keys) do
-          if k.key == "p" or k.key == "r" then
-            pos = i
-          end
-        end
-        table.insert(keys, pos + 1, {
-          icon = " ",
-          key = "w",
-          desc = "Workspaces",
-          action = function()
-            require("workspaces.ui").pick()
-          end,
-        })
-      end
       opts.picker = opts.picker or {}
       opts.picker.sources = opts.picker.sources or {}
       for _, source in ipairs({ "files", "grep", "grep_word" }) do

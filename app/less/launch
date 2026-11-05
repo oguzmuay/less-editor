@@ -1,0 +1,46 @@
+#!/bin/zsh -f
+# LESS window command: Neovim with the LESS config (NVIM_APPNAME=less/nvim) and the environment of
+# the user's login+interactive shell (PATH, exports), so it matches a normal terminal.
+# `$SHELL -lic` costs ~1 s, so what it sets (run from a clean base env, so Dock and terminal launches get
+# the same result) is cached privately (TMPDIR, cleared on reboot) and refreshed when a shell rc file
+# changes or the cache is older than a day. LESS_OPEN (set per window by `lessed`) is the file to open.
+here=${0:A:h}
+export LESS_APP=1 NVIM_APPNAME=less/nvim LESS_BIN="$here/../../MacOS/LESS"
+[[ -x $LESS_BIN ]] || LESS_BIN="$here/../../lib/less-editor/ghostty"  # Linux tarball layout
+file=$LESS_OPEN
+unset LESS_OPEN
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/less/nvim"
+if [[ ! -e $cfg ]]; then
+  mkdir -p ${cfg:h} && cp -R "$here/nvim" "$cfg"
+fi
+
+cache="${TMPDIR:-/tmp}/less-env-$UID"
+fresh=( $cache(N.Umh-24) )
+for rc in ~/.zshenv ~/.zprofile ~/.zshrc ~/.zlogin ~/.profile ~/.bash_profile ~/.bashrc ~/.config/fish/config.fish; do
+  [[ $rc -nt $cache ]] && fresh=
+done
+if [[ -z $fresh ]]; then
+  (
+    umask 077
+    base=( HOME=$HOME USER=$USER LOGNAME=$LOGNAME SHELL=${SHELL:-/bin/zsh} TERM=$TERM TMPDIR=$TMPDIR
+      PATH=/usr/bin:/bin:/usr/sbin:/sbin LESS_ENV_OUT=$cache.$$ )
+    /usr/bin/env -i $base "${SHELL:-/bin/zsh}" -lic 'exec /usr/bin/env -0 > "$LESS_ENV_OUT"' \
+      </dev/null >/dev/null 2>&1 || exit
+    before=( ${(0)"$(/usr/bin/env -i $base /usr/bin/env -0)"} ) after=( ${(0)"$(<$cache.$$)"} )
+    print -rN -- ${after:|before} >| "$cache.$$" && mv -f "$cache.$$" "$cache"
+  )
+  rm -f "$cache.$$"
+fi
+if [[ -s $cache && -O $cache ]]; then
+  for kv in ${(0)"$(<$cache)"}; do
+    case ${kv%%=*} in
+      PWD|OLDPWD|SHLVL|_|LESS_*|NVIM_APPNAME|GHOSTTY_*|TERM|TERM_PROGRAM*|TERMINFO|COLORTERM) ;;
+      *) export "$kv" 2>/dev/null ;;
+    esac
+  done
+fi
+
+if (( ! $+commands[nvim] )); then
+  echo "LESS needs Neovim: brew install neovim"; read -r _; exit 1
+fi
+exec nvim ${file:+"$file"}

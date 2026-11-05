@@ -22,6 +22,8 @@
 - Sağ sütun her zaman tam boy; sırası hep **üstte Claude, altta terminal** (hangisi önce açılırsa açılsın).
 - Alt şerit açıkken her zaman sol panellerin (Git / Files / Database) altına uzanır (sol panel sonradan açılsa da şeridin üstüne çıkmaz); sağ sütunun altına giremez.
 - Sol paneller birbirinin yerine geçmez, yan yana açılabilir (Git en solda).
+- Uzun mesajlar (ve `:Noice` geçmişi) da alt şeritte açılır, `q` ile kapanır; Run / Git History ile aynı yeri paylaşır.
+- Ortadaki kod penceresi `:q` / `:wq` / `Space w d` ile kapanmaz (`:wq` yine kaydeder). Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q.
 - Alt şeritte aynı anda **ya Run ya Git History** paneli açık olur; biri açılınca diğeri kapanır.
 
 ## Paneller
@@ -45,6 +47,7 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 | Komut | Panel | Davranış |
 |---|---|---|
 | **`:Files`** | Dosya gezgini | Aç / kapat |
+| **`:UIReset`** | Tüm paneller | Genişlik/yükseklikleri varsayılana döndürür (AI sütunu kodu kapatınca) |
 | **`:Code`** | Kod penceresi | Koda odaklanır (toggle değil) |
 | **`:Claude`** | Claude Code | Aç / kapat |
 | **`:Terminal`** | Terminal | Aç / kapat |
@@ -224,9 +227,14 @@ Tab kapatmak için Cmd+W değil ✕ / `:TermTabClose` kullan.
 
 ## Dosya ağacı (Cmd+1)
 
+Önizleme tab'ı, düzenleyince, kaydedince (`:w`), Cmd+P ile pinleyince ya da aynı dosyayı Cmd+F / `gd` ile açınca
+normal tab olur. Düzenlenmiş dosya asla kendiliğinden kapanmaz.
+
 | Tuş | İş |
 |---|---|
-| Çift tık / Enter / **Sağ ok** | Aç (klasörse genişlet) |
+| **Enter** / **tek tık** | Dosyayı **önizleme** tab'ında aç (italik; tek önizleme, sonraki dosya aynı tab'da açılır). Enter koda geçer, tek tık ağaçta kalır |
+| **Aynı dosyada tekrar Enter / çift tık** | Normal tab yap |
+| **Sağ ok** | Normal tab olarak aç (klasörse genişlet) |
 | **Sol ok** | Klasörü kapat |
 | `a` | Yeni dosya/klasör (sonu `/` ise klasör) |
 | `d` / `r` | Sil / yeniden adlandır |
@@ -234,7 +242,7 @@ Tab kapatmak için Cmd+W değil ✕ / `:TermTabClose` kullan.
 | `y` / `x` / `p` | Panoya kopyala / kes / yapıştır |
 | `H` | Gizli dosyaları göster/gizle |
 | `/` | Ağaçta filtrele |
-| `P` | Önizleme |
+| `P` | Yüzen önizleme penceresi |
 | `?` | Ağaç kısayolları yardımı |
 
 ## Run paneli (Cmd+6)
@@ -298,7 +306,7 @@ Kaydetme, odak dönüşü ve dışarıdan (ör. Claude) dosya değişikliklerind
 
 | Tuş / Mouse | İş |
 |---|---|
-| Enter / çift tık | Dosyayı aç (silinmişse diff) · bölüm başlığında aç-kapat |
+| Enter / çift tık | Dosyayı önizleme tab'ında aç (tekrar Enter → normal tab; silinmişse diff) · bölüm başlığında aç-kapat |
 | `o` / `d` | Dosyayı aç / diff'ini tab olarak aç |
 | `s` / `u` | Stage / unstage (dosya, bölüm ya da repo başlığında hepsi) |
 | `S` / `U` | Repodaki her şeyi stage / unstage |
@@ -371,7 +379,7 @@ Proje bazlı bağlantılar: repo kökünde `.lazy.lua` içine `vim.g.dbs = { dev
 | `Space q s` | Bu klasörde son oturumu geri yükle |
 | `Space q h` / `:Dashboard` | Açılış ekranı (editörün üstünde yüzer, panellere dokunmaz) |
 | `Space u C` | Renk teması seç |
-| `Space l` | Eklenti yöneticisi (Lazy) |
+| `Space l` | Eklenti yöneticisi ("Plugins") |
 | `Space n` | Bildirim geçmişi |
 | `:` | Komut satırı |
 
@@ -394,6 +402,24 @@ Proje bazlı bağlantılar: repo kökünde `.lazy.lua` içine `vim.g.dbs = { dev
 Varsayılan JetBrains Mono. Seçim kalıcıdır ve Ghostty kendiliğinden yeniden yüklenir (olmazsa Cmd+Shift+,).
 Seçenekler: JetBrains Mono, Geist Mono, Berkeley Mono (ücretli — kendin kurarsan), Cascadia Code, Fira Code,
 Maple Mono, IBM Plex Mono, Monaspace Neon / Argon / Xenon / Radon / Krypton.
+
+## LESS uygulaması
+
+Açılış ekranında LESS logosu ve kısayollar: `f` dosya bul · `n` yeni dosya · `p` projeler · `w` workspaces ·
+`s` oturumu geri yükle · `r` son dosyalar · `g` metin ara · `c` config · `l` eklentiler · `q` çık.
+
+İlk açılışta "Setting up LESS" ekranı eklentileri kurar (bir kez, ~1–2 dk); ardından dil araçları arka planda kurulur
+("Installing language tools…" bildirimi, bitince "LESS is ready."). İnternet yoksa LESS ne yapacağını söyler;
+bağlantıyı düzeltip yeniden aç.
+
+| Komut | İş |
+|---|---|
+| `make app` / `make run` | `build/LESS.app`'i derle / aç |
+| `make install` | `/Applications/LESS.app` + `~/.local/bin/lessed` kur |
+| `lessed` / `lessed <klasör>` / `lessed <dosya>` | LESS'i aç (klasörde ya da dosyayla) |
+
+LESS kendi ayarlarını `~/.config/less/` altında tutar; normal Ghostty ve nvim'i etkilemez. İlk açılışta eklentiler
+yeniden iner (birkaç dakika). Kısayolların hepsi aynı.
 
 ## Ghostty (terminal uygulaması)
 

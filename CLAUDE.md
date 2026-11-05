@@ -1,4 +1,7 @@
-# nvim-workbench
+# LESS editor (nvim-workbench)
+
+**LESS**: sade, IDEA gibi her yerinden bir şey çıkmayan bir editör. Ghostty fork'u (`LESS.app`) + bu reponun
+Neovim yapılandırması. Repo: `git@github.com:oguzmuay/less-editor.git` (`main`).
 
 macOS için Ghostty + LazyVim tabanlı, mouse + klavye ile kullanılan, "agentic development" odaklı
 Neovim kurulumu. Ağırlıklı diller: Java (Spring Boot), JavaScript/TypeScript; ayrıca SQL, Markdown.
@@ -37,13 +40,94 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/plugins/autorestore.lua autorestore setup (virtual lazy plugin), `Space q h` dashboard, NVIM_SESSIONS_DIR override
   lua/plugins/scrollbar.lua   nvim-scrollview (sağ kenar işaretleri) + `problems` virtual plugin
   lua/problems/init.lua       kod penceresi winbar'ında problem sayacı + ↑↓, jump(), is_code_window()
+  lua/plugins/dashboard.lua   LESS açılış ekranı (başlık, slogan, girişlerin tek kaynağı; `w` buradan)
+  lua/firstrun/init.lua       LESS ilk açılış ekranı: eklenti ilerlemesi, Mason/LSP kurulum bildirimi
+  lua/previewtab/init.lua     VS Code tarzı önizleme tab'ı: open(path, open_fn, keep), get(), promote(buf), neotree()
+  lua/plugins/previewtab.lua  previewtab setup (virtual plugin; bufferline opts'ta yamaları kurar)
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
   lua/plugins/font.lua        font setup (virtual lazy plugin)
   KISAYOLLAR.md               kullanıcıya yönelik kısayol özeti
   lazy-lock.json              eklenti sürümleri (commit'le)
 ghostty/config.ghostty        Ghostty config (~/.config/ghostty/config.ghostty -> buraya symlink)
 Brewfile, install.sh          yeni makinede kurulum
+Makefile                      LESS: make check / app / run / install / uninstall / clean
+app/ghostty/                  Ghostty v1.4.0 (git subtree --squash; upstream'e dokunuşlar app/PATCHES.md'de)
+app/less/                     defaults.ghostty, launch (nvim başlatıcı), icon.svg
+app/scripts/brand.sh          Ghostty derlemesini build/LESS.app'e çevirir (ad, bundle id, ikon, imza)
+app/scripts/lessed            `lessed [klasör|dosya]` CLI
+app/PATCHES.md                değiştirilen upstream dosyaları
+app/scripts/package-macos.sh  zip + DMG (LESS.app, lessed, install.sh, README.txt); package-linux.sh tarball
+app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dosyası, install.sh, linux.ghostty
+.github/workflows/release.yml `v*` tag → macOS universal (+ deneysel Linux) derle, GitHub Release yayınla
+.github/workflows/ci.yml      push/PR: lua + sh sözdizimi, actionlint
 ```
+
+## LESS uygulaması (Ghostty fork'u)
+
+- **Kimlik:** ad `LESS`, `LESS.app`, bundle id `com.oguz-dev.less-editor`, CLI `lessed` (asla `less` — Unix pager),
+  sürüm 0.1.0. Ghostty adı/logosu markada kullanılmaz; About'ta ve pakette (LICENSE) Ghostty'ye atıf (MIT).
+- **Upstream:** `app/ghostty` = Ghostty v1.4.0 subtree. Güncelleme:
+  `git subtree pull --prefix=app/ghostty https://github.com/ghostty-org/ghostty <tag> --squash`. Upstream'e dokunuş
+  minimum tutulur; **tam liste `app/PATCHES.md`'de** (subtree pull'da çakışma bu dosyalarda çıkar). Özet:
+  `src/config/file_load.zig` (XDG alt klasörü `less/`), `src/config/Config.zig` + `config-template` (ilk açılış şablonu
+  `~/.config/less/config.ghostty`'ye, LESS metniyle), `src/os/macos.zig` (App Support/Caches kimliği
+  `com.oguz-dev.less-editor`; eskiden sabit `com.mitchellh.ghostty` olduğu için LESS kullanıcının gerçek Ghostty
+  config'ini yüklüyordu), `Ghostty.Config.swift` (önce `Resources/less/defaults.ghostty`), `AboutView.swift`,
+  `MainMenu.xib` (sade menüler), 6 pencere xib'i + 2 TitlebarTabs swift (ilk başlık `LESS`), `AppDelegate.swift`,
+  `UntrustedURLAlert.swift`, `IntentPermission.swift`, `GhosttyIntentError.swift` (görünen uyarı metinleri).
+- **Post-build (`brand.sh`):** çalıştırılabilir `Contents/MacOS/LESS` (`CFBundleExecutable`; süreç adı LESS),
+  sdef başlık/açıklamaları ve Info.plist "Surface Identifier" metni LESS, entitlements imzada korunur.
+  Kalan Ghostty metinleri bilerek: iç kimlikler (Swift sınıfları, `com.mitchellh.ghostty.*`, sdef kodları,
+  `TERM_PROGRAM=ghostty`, `xterm-ghostty`, `GHOSTTY_*`), CLI `+help`/`--docs`, atıf (About, copyright, `GHOSTTY-LICENSE`).
+- **`lessed` (tek örnek):** LESS çalışmıyorsa `open -a LESS.app --args --initial-window=false`; her çağrıda
+  AppleScript `new window with configuration {initial working directory, environment variables:{"LESS_OPEN=…"}}`
+  (hazır olana kadar 10×0,5 sn). `LESS_OPEN` yalnız o pencerede (Ghostty yeni pencereye env aktarmaz; launcher okuyup
+  `unset` eder). İlk kullanımda macOS terminal uygulaması için Automation izni sorar.
+- **Varsayılanlar:** derlemede `ghostty/config.ghostty`'den (config-file satırları hariç) + LESS ekleri
+  (`app/less/defaults.ghostty`: `command` = launcher, `quit-after-last-window-closed`, `auto-update = off`,
+  Cmd+D/Cmd+Shift+D kapalı, `config-file = ?~/.config/less/font.ghostty`). Cmd kısayolları tek kaynaktan gelir.
+- **Launcher (`app/less/launch`, `#!/bin/zsh -f`):** `LESS_APP=1`, `NVIM_APPNAME=less/nvim`, `LESS_BIN=MacOS/LESS`.
+  Kullanıcı ortamı önbellekten: `env -i` temiz tabandan bir kez `$SHELL -lic`, yalnız rc'lerin koyduğu değişkenler
+  `$TMPDIR/less-env-$UID`'e (0600, sahiplik kontrolü); rc dosyası daha yeniyse ya da 24 saati geçtiyse yenilenir.
+  Pencere başı 1,0–1,8 sn → 12–17 ms. Pencereye özgü değişkenler (PWD, TERM*, GHOSTTY_*, LESS_*, NVIM_APPNAME)
+  ezilmez. rc'nin dışarıdan source ettiği dosyalar en geç 24 saatte yansır. `XDG_CONFIG_HOME` bilerek değiştirilmez (git/lazygit'e sızardı).
+- **Konumlar:** Ghostty tarafı `~/.config/less/config.ghostty`, `font.ghostty`; Neovim `~/.config/less/nvim`,
+  `~/.local/share|state/less/nvim`, `~/.cache/less/nvim`. Normal Ghostty/nvim kurulumuna dokunulmaz. `make install`
+  `~/.config/less/nvim` yoksa repodaki `nvim/`'e symlink yapar (geliştirme modu); yoksa ilk açılışta pakete gömülü
+  config kopyalanır (kullanıcıya ait, uygulama güncellenince kendiliğinden güncellenmez). İlk açılışta lazy/treesitter/
+  Mason LESS'in veri klasörüne yeniden iner (~200 MB + ~580 MB).
+- **nvim içinde LESS farkı** yalnız `LESS_APP=1` iken: `font/init.lua` hedef dosya `~/.config/less/font.ghostty`,
+  reload `tell application "LESS"`, `LESS_BIN +list-fonts`; `options.lua` `title`.
+- **Ön koşullar:** Zig 0.17.x (Homebrew), tam Xcode, Xcode Metal Toolchain (`xcodebuild -downloadComponent
+  MetalToolchain`). İmza ad-hoc, notarization yok. xcodebuild'in DVT/CoreSimulator uyarıları ve "failed command"
+  satırı zararsız (çıkış 0).
+
+- **Markalama (nvim):** dashboard başlığı LESS wordmark + "less noise, more code", altta yalnız açılış süresi;
+  "Lazy Extras" girdisi yok, "Lazy" → "Plugins"; `Space l` "Plugins", `Space L` (LazyVim Changelog) silindi,
+  `news.lazyvim = false`. Dashboard girişleri yalnız `plugins/dashboard.lua`'da (workspaces.lua artık eklemez).
+  Kalanlar: LazyVim uyarı başlıkları, `:Lazy` ekranı, `:checkhealth`.
+- **İlk açılış (`firstrun`):** tespit = veri klasöründe `lazy/LazyVim` yok (yarım kurulum da sayılır); kurulu
+  sistemde maliyet tek `fs_stat`, modül yüklenmez. Ortada "Setting up LESS" penceresi; lazy'nin ekranı bastırılır
+  (`lazy.view.show` + görev listesi iç API'si — **lazy güncellenince kontrol et**), "Installing plugins n/N" + çubuk.
+  Sonra dashboard; Mason registry önce hazırlanır, sonra lspconfig (yoksa LSP sunucuları kurulmuyordu); tek bildirim
+  "Installing language tools (n/N)…" → "LESS is ready." / "Run :Mason to retry."; mason-lspconfig bildirimleri
+  ilk açılışta susturulur. markdown-preview build terminali gizlenir (dashboard'u engelliyordu). Ağ hatası: lazy.nvim
+  inmezse açıklama + çıkış 1; eklenti inmezse lazy ayrıntısı + "Could not install N plugin(s)…".
+  **Dikkat:** geliştirme modunda (config repoya symlink) ağsız ilk açılış lazy'nin kendisi yüzünden repodaki
+  `lazy-lock.json`'u eksik eklentiyle yeniden yazar — böyle olursa `git checkout nvim/lazy-lock.json`.
+
+- **Sürüm hattı:** `git tag vX.Y.Z && git push origin vX.Y.Z` → release. Sürüm: `LESS_VERSION` → son `v*` tag →
+  `0.1.0` (`brand.sh`). `-` içeren sürüm prerelease. `workflow_dispatch` yalnız artifact üretir.
+  - macOS: runner `xcode-27` (public preview; Ghostty 1.4 Xcode 27.1 ister, `macos-26`'da yalnız 26.x), Zig 0.17.1
+    (`mlugg/setup-zig@v2`), Metal Toolchain, `make app XCFW=universal` → `LESS-<ver>-macos-universal.zip/.dmg`.
+    Ad-hoc imza; `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+    `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` secret'ları varsa Developer ID imza + notarytool + staple.
+  - Linux (deneysel, `continue-on-error`, `ubuntu-26.04` + `-arm`): Nix değil apt (Nix çıktısı dağıtılamaz);
+    blueprint-compiler ≥ 0.20 kaynaktan; upstream'e ek yama yok, kimlik `class = com.oguz-dev.less-editor`,
+    `bin/less-editor` LESS varsayılanlarını `--config-file` ile verir; kurulum `~/.local/opt/less-editor`. Release yalnız
+    macOS başarılıysa çıkar; Linux düşerse notlara yazılır.
+  - Windows yok: Ghostty'nin Windows sürümü yok; config-only paket dürüst olmazdı (Cmd→CSI, zsh launcher, osascript).
+  - Yerelde: `make dist` (arm64 zip + DMG `build/dist/`); `XCFW ?= native`.
 
 ## Kod kuralları
 
@@ -80,6 +164,24 @@ Brewfile, install.sh          yeni makinede kurulum
   - Tetikleyiciler: `BufWinEnter`/`TermOpen`/`WinNew`/`WinResized` → `schedule_arrange()` (tek `vim.schedule` ile
     birleşir); `files()`, `db()` ve `open_bottom()` eşzamanlı çağırır (titreme yok). `Space e` gibi başka yollar bir
     sonraki döngüde düzeltilir. `arrange_right_column` geriye uyumlu takma addır (termtabs onu çağırır).
+- **Şerit koruması (`guard_strip`, BufWinEnter):** `open_bottom` pencereye de `w:workbench_bottom` koyar
+  (`mark_bottom`). Yüzen olmayan `noice` penceresi (uzun mesaj split'i, `:Noice`) şeride alınır: işaretlenir,
+  `winfixwidth` kapatılır, şeritteki diğer araçlar gizlenir (`hide_strip`, `exclusive_bottom` ile ortak), odak koda
+  döner; kapanınca önceki araç geri gelmez. İşaretli şerit penceresine işaretsiz buffer gelirse buffer kod penceresine
+  taşınır, şerit penceresi kapanır. Kök neden: noice `botright split` işaretsizdi → ana alan sayılıp Files'ın altına
+  uzanıyordu, neo-tree dosyayı ona açıyordu (kopya kod penceresi); nui split'lerin `winfixwidth`'i sağ sütunu 5 sütuna
+  çökertiyordu. `save_sizes` sağ sütunu hatırlanan değerden alır; geri yüklerken sağ sütun dışındaki `winfixwidth`
+  geçici kapatılır.
+- **Kod penceresi korunur (`workbench.close_window(cmd, bang, args)`):** sekmedeki son kod penceresi (tek pencere
+  kalsa bile) `:q`/`:close`/`:wq`/`:x`/`:exit` (+ kısaltma, `!`) ile kapanmaz: `CmdlineLeave` + `nvim_parse_cmd`,
+  `let v:event.abort = v:true` (Lua'dan `vim.v.event.abort` kopya olduğu için etkisiz; cabbrev blink cmdline yüzünden
+  çalışmadı). `:wq` yazar, `:x`/`ZZ` `update` yapar; uyarı "The code editor stays open…". Tuşlar: `<C-w>c`, `<C-w>q`,
+  `<C-w><C-q>`, `<leader>wd` (doğrudan; LazyVim remap'i ulaşmıyordu), `ZQ`, `ZZ`. `g:workbench_keep_code`, varsayılan
+  argümansız açılış (`nvim dosya` ve git commit editöründe `:wq` normal çıkar). `:qa`/`:wqa`/`:xa`/`Space q q` çıkar.
+- **`:UIReset` (`workbench.reset_ui()`):** `state.sizes` silinir + `wincmd =`; sağ sütun `floor(columns*0.38)`,
+  Claude/terminal yarı yarıya, neo-tree 34, DBUI `g:db_ui_winwidth` (40), Git paneli 40, şerit `max(10, lines*0.3)`,
+  şerit içi `open_bottom` genişliği (Run 56). İlk açılışta treesitter `info` mesajları susturulur (`firstrun.quiet_treesitter`,
+  `package.preload` ile `nvim-treesitter.log`; `:TSLog`'a gider, uyarı/hata görünür; oturum boyu açık).
 - **Run sağlayıcısı:** `discover(root)` → `{ id, label, icon, icon_hl, children }`; yaprak öğe `{ id, label, detail,
   icon, icon_hl, cwd, cmd = fun(item): string[], ready? (Lua pattern), profiles?, debug? }`. Çalışma durumu id ile korunur.
   - `debug = { port?, ready, env?, attach? }`: `port` boş port aramasının başlangıcı (verilirse `item.debug_port`),
@@ -127,6 +229,13 @@ Brewfile, install.sh          yeni makinede kurulum
   "Press Cmd+Shift+, to reload Ghostty". Dosya yoksa Ghostty varsayılanı (gömülü JetBrains Mono). Kurulu fontlar
   `ghostty +list-fonts` ile (~0,6 sn; PATH'te yoksa `/Applications/Ghostty.app/Contents/MacOS/ghostty`). Kurulu olmayan
   font reddedilir + `brew install --cask` önerisi. Nerd Font varyantı gerekmez: Ghostty gömülü "Symbols Nerd Font" taşır.
+- **Önizleme tab'ı (`lua/previewtab`):** Files (neo-tree `<cr>`, `<LeftRelease>` tek tık, `<2-LeftMouse>`) ve Git
+  paneli (`open_file`) `previewtab.open` üzerinden açar. Tek önizleme; değiştirilirken bufferline `state.custom_sort`'ta
+  eski id yeniyle değiştirilir (yuva korunur; `BufAdd`'de yeni buffer sona eklenir, yoksa `table.sort` sırası kararsız),
+  eski buffer `Snacks.bufdelete` ile kapanır — **modified ise asla kapatılmaz**. Çeviriciler: `BufModifiedSet`,
+  `BufWritePost`, aynı dosyada ikinci açma, pin (`groups.add_element("pinned")` sarılı), Snacks picker
+  `actions.jump/confirm` (aynı buffer'da kalan `lsp_*` hariç). İtalik: `highlights.for_element` sarılı, `<grup>Preview`
+  kopyası. Durum yalnız bellekte (oturumda normal tab). **bufferline/Snacks iç API'lerine dayanır, güncellemede kontrol et.**
 - **Git blame:** `git blame --porcelain --contents -` buffer içeriğiyle çalışır (kaydedilmemiş satırlar kaymaz).
   Lens tanımları LSP `documentSymbol`'den gelir; metot/fonksiyon içine inilmez (callback'ler lens almaz).
 - **jdtls (`plugins/java.lua`):** Mason'ın kurduğu güncel jdtls **Java 25+ ister**; sistemdeki Java 21 ile başlatılırsa
@@ -306,6 +415,12 @@ Brewfile, install.sh          yeni makinede kurulum
 | 34 | **Run panelinde her öğe için Run / Stop / Debug / Rerun** (klavye, satır sonu butonları, sağ tık menüsü, `Space j`) | Spring (Maven/Gradle, jdtls ile attach) ve Node (npm/pnpm/yarn, alt süreçler dahil otomatik attach). Debug portu yalnız 127.0.0.1. Uygulama debugger'ı beklemez (`suspend=n`); jdtls hazır olunca bağlanır. |
 | 35 | **Sol Git paneli (Cmd+0, `:Git`)**: sadece commit edilmemiş dosyalar, stage / unstage / discard; alt paneldeki geçmiş **Git History** (Cmd+7, `:GitHistory`) | Özel modül (neo-tree git_status gruplamıyor, çoklu repo yok, Files penceresini paylaşırdı). Files/DB ile yan yana durur, en solda. Discard her zaman onay ister. Commit atma yok (istenmedi). |
 | 36 | **`:Font` ile font geçişi**, varsayılan JetBrains Mono | Seçenekler: JetBrains Mono, Geist Mono, Berkeley Mono (ücretli, kullanıcı kurarsa), Cascadia Code, Fira Code, Maple Mono, IBM Plex Mono, Monaspace Neon/Argon/Xenon/Radon/Krypton. Ücretsizler Brewfile'da cask olarak. Seçim kalıcı, Ghostty otomatik yeniden yüklenir. |
+| 37 | **Ürün adı LESS** ("LESS editor"): sade editör, IDEA gibi kalabalık değil. Ghostty fork'u bu repoda (`app/`), `LESS.app`, `com.oguz-dev.less-editor`, CLI `lessed` | Faz 1 = yeniden markalanmış Ghostty + gömülü Neovim config'i. Fork ayrı repo değil, subtree (upstream güncellemesi kolay). |
+| 38 | **Önizleme tab'ı** (VS Code gibi): Files/Git panelinde Enter / tek tık önizleme (italik, tek tane, yerine yenisi açılır); tekrar Enter / çift tık, düzenleme, kaydetme, pin → normal tab | Picker ve `gd` ile açılanlar doğrudan normal tab. |
+| 39 | **Proje adı less-editor; README İngilizce ürün README'si.** Release: GitHub Actions, macOS universal zip + DMG; Linux deneysel; Windows yok | Ghostty Windows'u desteklemiyor. İmza/notarization Apple hesabı gelince secret'larla. |
+| 40 | **Uzun mesaj paneli (noice) alt şeritte**, Run / Git History ile aynı yeri paylaşır | Biri açılınca diğeri gider; `q` kapatır. İlk açılışta treesitter indirme mesajları gösterilmez. |
+| 41 | **Ortadaki kod penceresi `:q` vb. ile kapanmaz** | Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q / `Space q q`. `nvim dosya` ve git commit editöründe koruma kapalı. |
+| 42 | **`:UIReset`** panel boyutlarını varsayılana döndürür | AI sütunu kodu kapatacak kadar genişlediğinde. Tuş önerisi Cmd+Shift+0 (bağlanmadı). |
 
 ## Açık konular / öneriler
 
@@ -349,4 +464,22 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
 - Font: seçicide önizleme yok; fonta özel `font-feature` (ligatür) yazılmıyor; Berkeley Mono "Berkeley Mono" aile
   adıyla aranır (farklı adla kurulursa görünmez); ilk osascript'te macOS Otomasyon izni sorabilir; ekranda canlı
   doğrulanmadı.
+- LESS: program başlık koymazsa yedek başlık `👻`; Cmd+Shift+P komut paletinde Ghostty'nin şaka ve güncelleme
+  girişleri duruyor. Soğuk `lessed` açılışı çağıranın ortamını uygulamaya taşır. About ve sekmeli başlık görsel
+  doğrulanmadı. Sonraki adımlar: notarization + DMG. İlk derlemede macOS bir kez "Dock tile extension" bildirimi
+  gösterdi (System Settings → Login Items & Extensions'tan kaldırılabilir).
+- İlk açılış: treesitter parser başına mesajları hâlâ görünür; LazyVim hiç inemezse önce "No specs found" hata seli +
+  "Press ENTER", LESS mesajı sonra gelir; lazy.nvim clone'u sırasında yalnız "Getting ready…". Ghostty/LESS.app'te
+  gözle bakılmadı (pty ekran metni doğrulandı).
+- Önizleme tab'ı: bufferline'da tab'a geçmek onu normal yapmaz; `:e`, Snacks dışı açma yolları çevirmez; neo-tree
+  `<Right>`/`l` doğrudan normal tab açar; Git panelinde tek tık eşlemesi yok (çift tık da önizleme). Split'te ve
+  neo-tree buffers/git_status kaynaklarında denenmedi; italik Ghostty'de gözle görülmedi.
+- Sürüm hattı hiç gerçek CI'da çalışmadı (yalnız actionlint): `xcode-27` preview imajı, universal derleme, imza/
+  notarization (`--deep`, `shortcut:` notu), Linux apt paket adları (`libgtk4-layer-shell-dev`), blueprint kurulumu ve
+  GTK derlemesi doğrulanmadı. Linux'ta About/menüler hâlâ "Ghostty", `super+` kısayolları masaüstüyle çakışabilir,
+  zsh gerekir, `:Font` reload ve `lessed` yok. CI'da stylua yok (biçim doğrulanmamış kod CI'ı kırabilirdi).
+- **Lisans kararı bekliyor:** repo kökünde LICENSE yok; README "henüz lisans yok, tüm hakları saklıdır" diyor.
+- Şerit/koruma: yeni uzun mesaj Run/Git History'yi gizler (tek araç kuralı). Kod penceresi koruması mapping içinden
+  `<Cmd>q<CR>`, `:bd`/`:only` ve Lua `nvim_win_close` yollarını kapsamaz. `restore` içinde hata olursa `winfixwidth` o turda
+  kapalı kalabilir. Sağ sütuna %50 üst sınır yok. Gerçek temiz ilk açılış bu değişiklikten sonra çalıştırılmadı.
 - Node.js Homebrew'dan değil `~/.local/bin` altından geliyor; Mason'ın npm tabanlı araçları için Node gerekli.

@@ -1,0 +1,15 @@
+# LESS defaults (appended to ghostty/config.ghostty at build time, minus its config-file lines).
+# User overrides: ~/.config/less/config.ghostty
+
+# Every window runs Neovim with the bundled LESS launcher.
+command = /bin/sh -c 'exec "$GHOSTTY_RESOURCES_DIR/../less/launch"'
+quit-after-last-window-closed = true
+# Upstream Ghostty updates must never replace LESS.
+auto-update = off
+
+# Splits don't fit an editor-first app: Neovim manages its own windows.
+keybind = super+d=unbind
+keybind = super+shift+d=unbind
+
+# :Font writes this file inside LESS.
+config-file = ?~/.config/less/font.ghostty

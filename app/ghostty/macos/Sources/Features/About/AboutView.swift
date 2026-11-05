@@ -3,8 +3,8 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.openURL) var openURL
 
-    private let githubURL = URL(string: "https://github.com/ghostty-org/ghostty")
-    private let docsURL = URL(string: "https://ghostty.org/docs")
+    private let githubURL = URL(string: "https://github.com/oguzmuay/less-editor")
+    private let docsURL = URL(string: "https://github.com/ghostty-org/ghostty")
 
     /// Read the commit from the bundle.
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
@@ -32,9 +32,8 @@ struct AboutView: View {
 
         var url: URL? {
             switch self {
-            case .stable(let version):
-                let slug = version.replacingOccurrences(of: ".", with: "-")
-                return URL(string: "https://ghostty.org/docs/install/release-notes/\(slug)")
+            case .stable:
+                return nil
             default:
                 return nil
             }
@@ -74,14 +73,14 @@ struct AboutView: View {
 
     var body: some View {
         VStack(alignment: .center) {
-            CyclingIconView()
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 128, height: 128)
 
             VStack(alignment: .center, spacing: 32) {
                 VStack(alignment: .center, spacing: 8) {
-                    Text("Ghostty")
+                    Text("LESS")
                         .bold()
                         .font(.title)
-                    Text("Fast, native, feature-rich terminal \nemulator pushing modern features.")
+                    Text("A calm editor.\nBuilt on Ghostty by Mitchell Hashimoto\nand contributors (MIT License).")
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)
@@ -113,7 +112,7 @@ struct AboutView: View {
 
                 HStack(spacing: 8) {
                     if let url = docsURL {
-                        Button("Docs") {
+                        Button("Ghostty") {
                             openURL(url)
                         }
                     }

@@ -1,13 +1,15 @@
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+local data = vim.fn.stdpath("data")
+local lazypath = data .. "/lazy/lazy.nvim"
+-- LazyVim yoksa ilk açılış (ya da yarıda kalmış kurulum): LESS kurulum ekranı
+local first_run = not (vim.uv or vim.loop).fs_stat(data .. "/lazy/LazyVim")
+if first_run then
+  require("firstrun").start()
+end
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
   local lazyrepo = "https://github.com/folke/lazy.nvim.git"
   local out = vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable", lazyrepo, lazypath })
   if vim.v.shell_error ~= 0 then
-    vim.api.nvim_echo({
-      { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
-      { out, "WarningMsg" },
-      { "\nPress any key to exit..." },
-    }, true, {})
+    require("firstrun").bootstrap_failed(out)
     vim.fn.getchar()
     os.exit(1)
   end
@@ -17,7 +19,7 @@ vim.opt.rtp:prepend(lazypath)
 require("lazy").setup({
   spec = {
     -- add LazyVim and import its plugins
-    { "LazyVim/LazyVim", import = "lazyvim.plugins" },
+    { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { news = { lazyvim = false } } },
     -- diller
     { import = "lazyvim.plugins.extras.lang.java" },
     { import = "lazyvim.plugins.extras.lang.typescript" },
@@ -67,3 +69,7 @@ require("lazy").setup({
     },
   },
 })
+
+if first_run then
+  require("firstrun").finish()
+end

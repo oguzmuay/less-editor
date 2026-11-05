@@ -310,8 +310,10 @@ function open_file(e, no_diff)
   if not no_diff and not vim.uv.fs_stat(path) then
     return show_diff(e)
   end
-  require("workbench").code({ pinned = false })
-  vim.cmd.edit(vim.fn.fnameescape(path))
+  require("previewtab").open(path, function()
+    require("workbench").code({ pinned = false })
+    vim.cmd.edit(vim.fn.fnameescape(path))
+  end)
 end
 
 --- Çalışma ağacındaki değişikliği geri alır (Changes: index'teki hale döner) ya da untracked dosyayı siler.

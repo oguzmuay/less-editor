@@ -68,6 +68,10 @@ extension Ghostty {
             if let path {
                 ghostty_config_load_file(cfg, path)
             } else {
+                // LESS: bundled defaults first, so the user's config can override them.
+                if let defaults = Bundle.main.path(forResource: "defaults", ofType: "ghostty", inDirectory: "less") {
+                    ghostty_config_load_file(cfg, defaults)
+                }
                 ghostty_config_load_default_files(cfg)
             }
 

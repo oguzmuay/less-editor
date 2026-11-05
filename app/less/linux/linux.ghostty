@@ -1,0 +1,5 @@
+# Linux only (appended after defaults.ghostty by app/scripts/package-linux.sh).
+# GTK application id / WM class: desktop file, window icon and single-instance D-Bus name.
+class = com.oguz-dev.less-editor
+# The launcher passes these defaults with --config-file, which loads after the user's file; load it again so it wins.
+config-file = ?~/.config/less/config.ghostty

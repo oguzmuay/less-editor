@@ -42,6 +42,12 @@ map("n", "<D-w>", function() Snacks.bufdelete() end, { desc = "Close buffer" })
 map("n", "<D-/>", "gcc", { remap = true, desc = "Toggle comment" })
 map("v", "<D-/>", "gc", { remap = true, desc = "Toggle comment" })
 map("t", "<C-q>", "<C-\\><C-n>", { desc = "Terminal: normal mode" })
+-- Son kod penceresi kapanmasın (:q/:close/:wq/:x workbench.guard_cmdline'da)
+local closers = { ["<C-w>c"] = "close", ["<C-w>q"] = "quit", ["<C-w><C-q>"] = "quit", ["<leader>wd"] = "close", ZQ = "quit" }
+for lhs, cmd in pairs(closers) do
+  map("n", lhs, function() wb.close_window(cmd, lhs == "ZQ") end, { desc = "Close window (keeps the code editor)" })
+end
+map("n", "ZZ", function() wb.close_window("xit") end, { desc = "Save and close window (keeps the code editor)" })
 
 -- Mouse: Ctrl/Option + tık ile tanıma git, sağ tık menüsüne LSP ve Claude eylemleri
 map("n", "<C-LeftMouse>", "<LeftMouse><cmd>lua vim.lsp.buf.definition()<cr>", { desc = "Go to definition" })
@@ -99,3 +105,7 @@ map({ "n", "v" }, "<M-b>", "b", { desc = "Word back" })
 map({ "n", "v" }, "<M-f>", "w", { desc = "Word forward" })
 map("i", "<M-b>", "<C-Left>", { desc = "Word back" })
 map("i", "<M-f>", "<C-Right>", { desc = "Word forward" })
+
+-- LESS markası: LazyVim'in "Lazy" / "LazyVim Changelog" girdileri which-key'de görünmesin
+map("n", "<leader>l", "<cmd>Lazy<cr>", { desc = "Plugins" })
+pcall(vim.keymap.del, "n", "<leader>L")

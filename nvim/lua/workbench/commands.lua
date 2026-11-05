@@ -30,6 +30,7 @@ function M.setup()
       end, { nargs = 0, desc = spec[2], force = true })
     end
   end
+  vim.api.nvim_create_user_command("UIReset", wb.reset_ui, { nargs = 0, desc = "Reset panel sizes to defaults" })
 end
 
 return M

@@ -22,8 +22,10 @@ return {
       window = {
         width = 34,
         mappings = {
-          ["<2-LeftMouse>"] = "open",
-          ["<LeftRelease>"] = "noop",
+          -- Enter / tek tık: önizleme tab'ı; aynı dosyada tekrar Enter / çift tık: normal tab (lua/previewtab)
+          ["<cr>"] = function(state) require("previewtab").neotree(state) end,
+          ["<2-LeftMouse>"] = function(state) require("previewtab").neotree(state) end,
+          ["<LeftRelease>"] = function(state) require("previewtab").neotree(state, true) end,
           ["<Right>"] = "open",
           ["<Left>"] = "close_node",
         },

@@ -19,3 +19,9 @@ vim.g.db_ui_win_position = "left"
 vim.g.db_ui_winwidth = 40
 
 vim.env.PATH = "/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/libpq/bin:" .. vim.env.PATH
+
+-- LESS.app: pencere başlığı = proje adı
+if vim.env.LESS_APP == "1" then
+  vim.opt.title = true
+  vim.opt.titlestring = "%{fnamemodify(getcwd(), ':t')}"
+end

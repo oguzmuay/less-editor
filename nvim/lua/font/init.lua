@@ -2,8 +2,11 @@
 --- `~/.config/ghostty/font.ghostty` dosyasına `font-family = "..."` olarak yazar (config.ghostty bu dosyayı
 --- `config-file = ?...` ile isteğe bağlı include eder) ve Ghostty'ye AppleScript ile `reload_config` gönderir.
 --- Dosya yoksa Ghostty'nin varsayılanı (gömülü JetBrains Mono) geçerlidir. Testler `NVIM_FONT_FILE` ile
---- dosyayı başka yere yönlendirir.
+--- dosyayı başka yere yönlendirir. LESS.app içinde (`LESS_APP=1`, launcher koyar) hedef
+--- `~/.config/less/font.ghostty`, yeniden yükleme "LESS" uygulamasına gider, font listesi `LESS_BIN` ile alınır.
 local M = {}
+
+local in_less = vim.env.LESS_APP == "1"
 
 M.default = "JetBrains Mono"
 
@@ -29,11 +32,15 @@ M.fonts = {
 
 ---@return string
 function M.file()
-  return vim.env.NVIM_FONT_FILE or vim.fn.expand("~/.config/ghostty/font.ghostty")
+  local default = in_less and "~/.config/less/font.ghostty" or "~/.config/ghostty/font.ghostty"
+  return vim.env.NVIM_FONT_FILE or vim.fn.expand(default)
 end
 
 ---@return string
 local function ghostty_bin()
+  if in_less and vim.env.LESS_BIN then
+    return vim.env.LESS_BIN
+  end
   return vim.fn.executable("ghostty") == 1 and "ghostty" or "/Applications/Ghostty.app/Contents/MacOS/ghostty"
 end
 
@@ -77,9 +84,11 @@ function M.find(name)
   end
 end
 
---- Açık Ghostty pencerelerine `reload_config` gönderir; olmazsa elle yeniden yükleme ipucu gösterir.
+--- Açık Ghostty (LESS içindeyse LESS) pencerelerine `reload_config` gönderir; olmazsa elle yeniden yükleme ipucu
+--- gösterir.
 function M.reload()
-  local script = 'if application "Ghostty" is running then tell application "Ghostty" to perform action '
+  local app = in_less and "LESS" or "Ghostty"
+  local script = ('if application "%s" is running then tell application "%s" to perform action '):format(app, app)
     .. '"reload_config" on focused terminal of selected tab of front window'
   vim.system({ "osascript", "-e", script }, { text = true }, function(res)
     if res.code ~= 0 then

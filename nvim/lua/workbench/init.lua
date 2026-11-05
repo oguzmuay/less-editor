@@ -73,12 +73,16 @@ end
 
 --- Son kullanılan kod penceresini takip eden autocmd'leri ve terminal davranışlarını kurar.
 function M.setup()
+  if vim.g.workbench_keep_code == nil then
+    vim.g.workbench_keep_code = vim.fn.argc(-1) == 0
+  end
   require("termtabs").setup()
   local group = vim.api.nvim_create_augroup("workbench", { clear = true })
   vim.api.nvim_create_autocmd("WinEnter", {
     group = group,
     callback = function()
       local win = vim.api.nvim_get_current_win()
+      state.prev_focus, state.focus = state.focus, win
       if is_code_win(win) then
         state.code_win = win
       end
@@ -89,6 +93,17 @@ function M.setup()
     callback = function()
       schedule_arrange()
     end,
+  })
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    callback = function(ev)
+      M.guard_strip(ev.buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd("CmdlineLeave", {
+    group = group,
+    pattern = ":",
+    callback = M.guard_cmdline,
   })
   vim.api.nvim_create_autocmd({ "WinEnter", "BufWinEnter" }, {
     group = group,
@@ -392,7 +407,9 @@ local function save_sizes(right, strip)
       fixed[w] = api.nvim_win_get_width(w)
     end
   end
-  local right_width = #right > 0 and math.max(40, unpack(vim.tbl_map(api.nvim_win_get_width, right)))
+  local right_width = #right > 0 and math.max(40, unpack(vim.tbl_map(function(w)
+    return size(w, "width")
+  end, right)))
   local right_heights = {}
   if vim.iter(right):all(function(w)
     return known[w] ~= nil
@@ -406,6 +423,13 @@ local function save_sizes(right, strip)
     return size(w, "width")
   end, vim.list_slice(strip, 1, #strip - 1))
   return function()
+    local unfixed = vim.tbl_filter(function(w)
+      return not vim.tbl_contains(right, w) and api.nvim_win_get_config(w).relative == "" and vim.wo[w].winfixwidth
+    end, api.nvim_tabpage_list_wins(0))
+    -- winfixwidth (ör. noice/nui split'leri) sağ sütunun genişliğini geri almasını engellerdi
+    for _, w in ipairs(unfixed) do
+      vim.wo[w].winfixwidth = false
+    end
     if right_width then
       api.nvim_win_set_width(right[1], right_width)
     end
@@ -422,6 +446,11 @@ local function save_sizes(right, strip)
     end
     for i, height in ipairs(right_heights) do
       api.nvim_win_set_height(right[i], height)
+    end
+    for _, w in ipairs(unfixed) do
+      if api.nvim_win_is_valid(w) then
+        vim.wo[w].winfixwidth = true
+      end
     end
   end
 end
@@ -512,10 +541,73 @@ function M.open_bottom(buf, opts)
     })
     M.arrange_layout()
   end
+  M.mark_bottom(win, opts.width)
+  return win
+end
+
+--- Pencereyi alt şerit penceresi olarak işaretler: buffer'a `workbench_bottom`, pencereye `w:workbench_bottom`
+--- (şeride sonradan normal dosya açılırsa `guard_strip` onu koda taşır) ve `:UIReset` için varsayılan genişlik.
+---@param win integer
+---@param width? integer
+function M.mark_bottom(win, width)
+  vim.b[vim.api.nvim_win_get_buf(win)].workbench_bottom = true
+  vim.w[win].workbench_bottom = true
+  vim.w[win].workbench_width = width
   for opt, val in pairs({ winfixheight = true, number = false, relativenumber = false, signcolumn = "no" }) do
     vim.wo[win][opt] = val
   end
-  return win
+end
+
+--- Şeritteki (`except` dışındaki) tüm pencereleri gizler; tek pencere kaldıysa dokunmaz.
+---@param except? integer
+local function hide_strip(except)
+  for _, win in ipairs(M.bottom_wins()) do
+    if win ~= except and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+      vim.api.nvim_win_hide(win)
+    end
+  end
+end
+
+--- `BufWinEnter`'da çağrılır. (1) noice'un split görünümleri (uzun mesaj, `:Noice` geçmişi; nui `botright split`
+--- açar) alt şeride alınır: Run / Git History gibi şeritteki araçlar gizlenir, pencere şerit olarak işaretlenir.
+--- (2) Şerit penceresine işaretsiz bir buffer (ör. neo-tree'nin "son pencere"ye açtığı dosya) gelirse buffer kod
+--- penceresine taşınır ve şerit penceresi kapanır; yoksa kod alanı ikiye bölünmüş gibi ikinci bir kod penceresi
+--- sol panellerin altına uzanırdı. Kod penceresi yoksa pencere sıradan ana alan penceresine döner.
+---@param buf integer
+function M.guard_strip(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      if vim.bo[buf].filetype == "noice" and not vim.w[win].workbench_bottom then
+        M.mark_bottom(win)
+        vim.wo[win].winfixwidth = false
+        local focused = vim.tbl_contains(M.bottom_wins(), state.focus == win and state.prev_focus or state.focus)
+        hide_strip(win)
+        vim.schedule(function()
+          if focused and M.code_win() then
+            vim.api.nvim_set_current_win(M.code_win())
+          end
+          M.arrange_layout()
+        end)
+      elseif vim.w[win].workbench_bottom and not vim.b[buf].workbench_bottom then
+        vim.schedule(function()
+          if not (vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf) then
+            return
+          end
+          local code = state.code_win ~= win and is_code_win(state.code_win or -1) and state.code_win
+            or find_win(function(w)
+              return w ~= win and is_code_win(w) and not vim.w[w].workbench_bottom
+            end)
+          if not code then
+            vim.w[win].workbench_bottom = nil
+            return
+          end
+          vim.api.nvim_win_set_buf(code, buf)
+          vim.api.nvim_win_close(win, true)
+          focus(code)
+        end)
+      end
+    end
+  end
 end
 
 --- Cmd+5: Veritabanı paneli (vim-dadbod-ui).
@@ -535,11 +627,7 @@ end
 ---@return fun()
 local function exclusive_bottom(open)
   return function()
-    for _, win in ipairs(M.bottom_wins()) do
-      if #vim.api.nvim_tabpage_list_wins(0) > 1 then
-        vim.api.nvim_win_hide(win)
-      end
-    end
+    hide_strip()
     open()
   end
 end
@@ -636,6 +724,107 @@ function M.toggle(name)
   if was_current or not vim.api.nvim_win_is_valid(vim.api.nvim_get_current_win()) then
     M.code({ pinned = false })
   end
+end
+
+
+--- `:UIReset`: panel boyutlarını varsayılana döndürür. Önce `wincmd =` (kod alanı eşitlenir), sonra sağ sütun
+--- `columns * 0.38` (claudecode `split_width_percentage` / termtabs ile aynı), Claude/terminal yarı yarıya, sol paneller
+--- neo-tree 34 / DBUI `g:db_ui_winwidth` (40) / Git 40, şerit `max(10, lines * 0.3)` yüksekliğinde ve şerit
+--- pencereleri `open_bottom`'a verilen genişlikte (son pencere kalanı alır). Hatırlanan boyutlar (`state.sizes`)
+--- silinir ki `arrange_layout` eski (büyümüş) boyutları geri yüklemesin.
+function M.reset_ui()
+  local api = vim.api
+  state.sizes = nil
+  local right = vim.tbl_filter(function(w)
+    return w ~= nil
+  end, { claude_win(), shell_win() })
+  local strip = M.bottom_wins()
+  local panels = { ["neo-tree"] = 34, dbui = vim.g.db_ui_winwidth or 40, gitstatus = 40 }
+  vim.cmd("noautocmd wincmd =")
+  if #right > 0 then
+    api.nvim_win_set_width(right[1], math.floor(vim.o.columns * 0.38))
+  end
+  for _, w in ipairs(api.nvim_tabpage_list_wins(0)) do
+    local width = api.nvim_win_get_config(w).relative == "" and panels[vim.bo[api.nvim_win_get_buf(w)].filetype]
+    if width then
+      api.nvim_win_set_width(w, width)
+    end
+  end
+  if #strip > 0 then
+    api.nvim_win_set_height(strip[1], math.max(10, math.floor(vim.o.lines * 0.3)))
+    for i = 1, #strip - 1 do
+      local width = vim.w[strip[i]].workbench_width
+      if width then
+        api.nvim_win_set_width(strip[i], width)
+      end
+    end
+  end
+  if #right > 1 then
+    local total = api.nvim_win_get_height(right[1]) + api.nvim_win_get_height(right[2])
+    api.nvim_win_set_height(right[1], math.floor(total / 2))
+  end
+  M.arrange_layout()
+end
+
+--- Korunan kod penceresi mi: koruma açık (`g:workbench_keep_code`, varsayılan argümansız açılış) ve `win` sekmedeki
+--- son kod penceresi (panel, şerit, sağ sütun, float ve diff pencereleri sayılmaz).
+---@param win integer
+---@return boolean
+local function keep_code(win)
+  local function code(w)
+    return is_code_win(w) and not vim.wo[w].diff and not vim.w[w].workbench_bottom
+  end
+  if not (vim.g.workbench_keep_code and code(win)) then
+    return false
+  end
+  return not vim.iter(vim.api.nvim_tabpage_list_wins(0)):any(function(w)
+    return w ~= win and code(w)
+  end)
+end
+
+--- Ex komutunu çalıştırır; hatayı Lua yığın izi olmadan, Vim'in kendi mesajıyla gösterir.
+---@param cmd string
+local function exec(cmd)
+  local ok, err = pcall(vim.cmd, cmd)
+  if not ok then
+    vim.api.nvim_echo({ { (tostring(err):gsub("^.-Vim%(%a+%):", "")), "ErrorMsg" } }, true, {})
+  end
+end
+
+local closers = { quit = "quit", close = "close", wq = "wq", xit = "xit", exit = "xit" }
+
+--- `CmdlineLeave`: Enter'la çalıştırılacak `:q`, `:quit`, `:close`, `:wq`, `:x`, `:exit` (her kısaltma ve `!` ile)
+--- korunan kod penceresini kapatacaksa komut iptal edilir (`v:event.abort`), yerine `close_window` çalışır.
+--- Aralık/sayı verilmiş ya da `|` ile zincirlenmiş komutlara dokunulmaz.
+function M.guard_cmdline()
+  if vim.v.event.abort or vim.v.char ~= "\r" then
+    return
+  end
+  local ok, cmd = pcall(vim.api.nvim_parse_cmd, vim.fn.getcmdline(), {})
+  local kind = ok and closers[cmd.cmd]
+  if not kind or cmd.range or cmd.count or cmd.nextcmd ~= "" or not keep_code(vim.api.nvim_get_current_win()) then
+    return
+  end
+  vim.cmd("let v:event.abort = v:true") -- vim.v.event bir kopya döndürür, atama işe yaramaz
+  vim.schedule(function()
+    M.close_window(kind, cmd.bang, table.concat(cmd.args, " "))
+  end)
+end
+
+--- `:q`, `:close`, `:wq`, `:x` (ve Ctrl+W c/q, ZZ, ZQ, `Space w d`) yerine geçer: odaktaki pencere korunan kod
+--- penceresiyse kapatmaz (`:wq`/`:x` yine yazar) ve uyarır; değilse komutu aynen çalıştırır. `:qa` vb. dokunulmaz.
+---@param cmd "quit"|"close"|"wq"|"xit"
+---@param bang? boolean
+---@param args? string
+function M.close_window(cmd, bang, args)
+  local tail = (bang and "!" or "") .. ((args or "") ~= "" and " " .. args or "")
+  if not keep_code(vim.api.nvim_get_current_win()) then
+    return exec(cmd .. tail)
+  end
+  if cmd == "wq" or cmd == "xit" then
+    exec((cmd == "wq" and "write" or "update") .. tail)
+  end
+  vim.notify("The code editor stays open. Use Cmd+W to close a tab, or :qa to quit LESS.", vim.log.levels.WARN)
 end
 
 return M
