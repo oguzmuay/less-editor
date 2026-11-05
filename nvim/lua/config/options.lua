@@ -1,0 +1,21 @@
+-- Options are automatically loaded before lazy.nvim startup
+-- Default options that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
+-- Add any additional options here
+
+vim.g.lazyvim_picker = "snacks"
+vim.g.autoformat = true
+
+vim.opt.mouse = "a"
+vim.opt.mousemoveevent = true
+vim.opt.mousescroll = "ver:3,hor:6"
+vim.opt.clipboard = "unnamedplus"
+vim.opt.splitright = true
+vim.opt.splitbelow = true
+vim.opt.relativenumber = false
+vim.opt.scrolloff = 6
+vim.opt.whichwrap:append("<,>,[,]")
+
+vim.g.db_ui_win_position = "left"
+vim.g.db_ui_winwidth = 40
+
+vim.env.PATH = "/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/libpq/bin:" .. vim.env.PATH

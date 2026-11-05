@@ -1,0 +1,47 @@
+# Ghostty — Neovim agentic dev setup
+# Cmd tuşları kitty/CSI-u dizisi olarak Neovim'e iletilir (Neovim'de <D-x> olarak görünür).
+
+theme = TokyoNight Night
+font-size = 14
+window-padding-x = 4
+window-padding-y = 2
+macos-option-as-alt = true
+mouse-hide-while-typing = true
+copy-on-select = clipboard
+confirm-close-surface = false
+shell-integration-features = no-cursor
+
+# --- Paneller: Cmd+1..6 -> Neovim -------------------------------------------
+keybind = super+1=csi:49;9u
+keybind = super+digit_1=csi:49;9u
+keybind = super+2=csi:50;9u
+keybind = super+digit_2=csi:50;9u
+keybind = super+3=csi:51;9u
+keybind = super+digit_3=csi:51;9u
+keybind = super+4=csi:52;9u
+keybind = super+digit_4=csi:52;9u
+keybind = super+5=csi:53;9u
+keybind = super+digit_5=csi:53;9u
+keybind = super+6=csi:54;9u
+keybind = super+digit_6=csi:54;9u
+keybind = super+7=csi:55;9u
+keybind = super+digit_7=csi:55;9u
+
+# --- Editör kısayolları -> Neovim -------------------------------------------
+keybind = super+s=csi:115;9u
+keybind = super+f=csi:102;9u
+keybind = super+w=csi:119;9u
+keybind = super+slash=csi:47;9u
+keybind = super+shift+f=csi:102;10u
+keybind = super+shift+e=csi:101;10u
+keybind = super+e=csi:101;9u
+
+# --- Satır/dosya başı-sonu -> Neovim (Option+Ok kelime atlama Ghostty varsayılanı: ESC b / ESC f)
+keybind = super+arrow_left=csi:1;9D
+keybind = super+arrow_right=csi:1;9C
+keybind = super+arrow_up=csi:1;9A
+keybind = super+arrow_down=csi:1;9B
+
+# Ghostty sekmeleri arasında geçiş Cmd+1..9 yerine Ctrl+Tab ile:
+keybind = ctrl+tab=next_tab
+keybind = ctrl+shift+tab=previous_tab
