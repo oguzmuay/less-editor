@@ -47,7 +47,7 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 | Komut | Panel | Davranış |
 |---|---|---|
 | **`:Files`** | Dosya gezgini | Aç / kapat |
-| **`:UIReset`** | Tüm paneller | Genişlik/yükseklikleri varsayılana döndürür (AI sütunu kodu kapatınca) |
+| **`:UIReset`** / **Cmd+Shift+0** | Tüm paneller | Genişlik/yükseklikleri varsayılana döndürür (AI sütunu kodu kapatınca) |
 | **`:Code`** | Kod penceresi | Koda odaklanır (toggle değil) |
 | **`:Claude`** | Claude Code | Aç / kapat |
 | **`:Terminal`** | Terminal | Aç / kapat |

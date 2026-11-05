@@ -28,6 +28,8 @@ keybind = super+7=csi:55;9u
 keybind = super+digit_7=csi:55;9u
 keybind = super+0=csi:48;9u
 keybind = super+digit_0=csi:48;9u
+keybind = super+shift+0=csi:48;10u
+keybind = super+shift+digit_0=csi:48;10u
 
 # --- Editör kısayolları -> Neovim -------------------------------------------
 keybind = super+s=csi:115;9u

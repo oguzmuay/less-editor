@@ -19,6 +19,7 @@ map(nt, "<D-5>", wb.db, { desc = "Panel: Database" })
 map(nt, "<D-6>", wb.runner, { desc = "Panel: Run" })
 map(nt, "<D-7>", wb.git_history, { desc = "Panel: Git History" })
 map(nt, "<D-0>", wb.git, { desc = "Panel: Git" })
+map(nt, "<S-D-0>", wb.reset_ui, { desc = "Reset panel sizes" })
 
 -- Leader karşılıkları (Cmd kullanılamayan yerler için)
 map("n", "<leader>1", wb.files, { desc = "Panel: Files" })

@@ -420,7 +420,8 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 39 | **Proje adı less-editor; README İngilizce ürün README'si.** Release: GitHub Actions, macOS universal zip + DMG; Linux deneysel; Windows yok | Ghostty Windows'u desteklemiyor. İmza/notarization Apple hesabı gelince secret'larla. |
 | 40 | **Uzun mesaj paneli (noice) alt şeritte**, Run / Git History ile aynı yeri paylaşır | Biri açılınca diğeri gider; `q` kapatır. İlk açılışta treesitter indirme mesajları gösterilmez. |
 | 41 | **Ortadaki kod penceresi `:q` vb. ile kapanmaz** | Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q / `Space q q`. `nvim dosya` ve git commit editöründe koruma kapalı. |
-| 42 | **`:UIReset`** panel boyutlarını varsayılana döndürür | AI sütunu kodu kapatacak kadar genişlediğinde. Tuş önerisi Cmd+Shift+0 (bağlanmadı). |
+| 42 | **`:UIReset`** panel boyutlarını varsayılana döndürür | AI sütunu kodu kapatacak kadar genişlediğinde. Tuş **Cmd+Shift+0** (`csi:48;10u` → `<S-D-0>`; klavye düzeninden bağımsız, TR'de Shift+0 `=` olurdu). |
+| 43 | **Lisans: MIT** (kök `LICENSE`), Ghostty ile aynı | Kullanıcı: Ghostty'den daha serbest bir şey seçilmemeli; MIT zaten aynı. Ghostty'nin MIT metni `app/ghostty/LICENSE` ve pakette `GHOSTTY-LICENSE` olarak korunur. |
 
 ## Açık konular / öneriler
 
@@ -478,7 +479,6 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
   notarization (`--deep`, `shortcut:` notu), Linux apt paket adları (`libgtk4-layer-shell-dev`), blueprint kurulumu ve
   GTK derlemesi doğrulanmadı. Linux'ta About/menüler hâlâ "Ghostty", `super+` kısayolları masaüstüyle çakışabilir,
   zsh gerekir, `:Font` reload ve `lessed` yok. CI'da stylua yok (biçim doğrulanmamış kod CI'ı kırabilirdi).
-- **Lisans kararı bekliyor:** repo kökünde LICENSE yok; README "henüz lisans yok, tüm hakları saklıdır" diyor.
 - Şerit/koruma: yeni uzun mesaj Run/Git History'yi gizler (tek araç kuralı). Kod penceresi koruması mapping içinden
   `<Cmd>q<CR>`, `:bd`/`:only` ve Lua `nvim_win_close` yollarını kapsamaz. `restore` içinde hata olursa `winfixwidth` o turda
   kapalı kalabilir. Sağ sütuna %50 üst sınır yok. Gerçek temiz ilk açılış bu değişiklikten sonra çalıştırılmadı.

@@ -126,5 +126,5 @@ notarization run only when the `APPLE_*` secrets are set (see the workflow heade
 - [Neovim](https://neovim.io) (Apache 2.0 / Vim license), [LazyVim](https://www.lazyvim.org) (Apache 2.0) and
   the plugins listed in `nvim/lazy-lock.json`, each under its own license.
 
-LESS's own code (Neovim modules, scripts, branding) has no license file yet; until one is added, all rights are
-reserved. LESS is not affiliated with Ghostty.
+LESS's own code (Neovim modules, scripts, branding) is released under the [MIT License](LICENSE), the same license
+as Ghostty. LESS is not affiliated with Ghostty.
