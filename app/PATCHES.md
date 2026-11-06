@@ -26,7 +26,9 @@ Ghostty is MIT licensed; its LICENSE stays in `app/ghostty/LICENSE` and is copie
 | `src/config/config-template` | Rewritten for LESS (short, points to `~/.config/less`, credits Ghostty docs) | First-run file must not say Ghostty |
 | 6 window xibs: `macos/Sources/Features/Terminal/Window Styles/Terminal*.xib`, `macos/Sources/Features/QuickTerminal/QuickTerminal.xib` | Initial window title `👻 Ghostty` → `LESS` | Visible before Neovim sets the title |
 | `macos/Sources/Features/Terminal/Window Styles/TitlebarTabsTahoeTerminalWindow.swift`, `TitlebarTabsVenturaTerminalWindow.swift` | Same initial title `LESS` (tabs titlebar style) | Same |
-| `macos/Sources/App/AppDelegate.swift` | Alert texts: "Allow LESS to execute…", "Quit LESS?" (×2), hidden-control-characters warning | Visible strings |
+| `macos/Sources/App/AppDelegate.swift` | Alert texts: "Allow LESS to execute…", "Quit LESS?" (×2), hidden-control-characters warning; one line in `applicationDidFinishLaunching` installing `LESSFileMenu` | Visible strings; File menu |
+| `macos/Sources/Features/Terminal/BaseTerminalController.swift`, `macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift` | Fallback title `👻` → `LESS` (3 strings); `window.representedURL` falls back to the app bundle (LESS icon next to the title) | No ghost in the title bar |
+| `macos/Sources/App/LESSFileMenu.swift` (new file, LESS-only) | File > "Open Folder…" and "Open Recent" (projects/workspaces from `~/.local/state/less/nvim/recents.json`, written by `nvim/lua/autorestore`); each opens a new window in that folder | Switch projects in new windows from the menu bar |
 | `macos/Sources/Helpers/UntrustedURLAlert.swift` | "LESS Blocked This Link" | Visible string |
 | `macos/Sources/Features/App Intents/IntentPermission.swift`, `GhosttyIntentError.swift` | Shortcuts permission prompt / errors say LESS | Visible strings |
 | `macos/Sources/App/MainMenu.xib` | App menu titled LESS (About/Hide/Quit LESS); `hidden="YES"` on: Check for Updates, Make Default Terminal, Split Right/Left/Down/Up, Change Terminal Title, Terminal Read-only, Quick Terminal, Terminal Inspector, Show/Hide All Terminals, split items of Window menu, Help menu | Calm, minimal menus |
@@ -40,7 +42,6 @@ All string patches are plain replacements; on a subtree pull conflict re-apply t
   AppleScript codes and cocoa classes, App Intents type names, `Resources/ghostty/` (themes, shell integration),
   `Ghostty.sdef`/`Ghostty.icns` file names, `TERM_PROGRAM=ghostty`, `xterm-ghostty` terminfo, `GHOSTTY_*` env vars.
 - Embedded config/CLI documentation (`+show-config --docs`, `+help`) and CLI stderr messages talk about Ghostty.
-- Fallback title `👻` when a program sets no title (Neovim always sets one in LESS).
 - Command palette (Cmd+Shift+P) still has Ghostty's "Ghostty" joke entry and update entries (updates are off).
 - Hidden menu items keep their Ghostty titles in `MainMenu.xib` (never shown).
 - About window and `Resources/less/GHOSTTY-LICENSE` credit Ghostty on purpose.

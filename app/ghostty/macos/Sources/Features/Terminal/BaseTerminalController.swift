@@ -107,7 +107,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     /// The last computed title from the focused surface (without the override).
-    private var lastComputedTitle: String = "👻"
+    private var lastComputedTitle: String = "LESS"
 
     /// The time that undo/redo operations that contain running ptys are valid for.
     var undoExpiration: Duration {
@@ -895,7 +895,7 @@ class BaseTerminalController: NSWindowController,
                 .store(in: &focusedSurfaceCancellables)
         } else {
             // There is no surface to listen to titles for.
-            titleDidChange(to: "👻")
+            titleDidChange(to: "LESS")
         }
     }
 
@@ -924,6 +924,8 @@ class BaseTerminalController: NSWindowController,
         }
 
         window.title = lastComputedTitle
+        // LESS: the app icon next to the title (window title icon) unless a pwd proxy icon is set
+        if window.representedURL == nil { window.representedURL = Bundle.main.bundleURL }
     }
 
     func pwdDidChange(to: URL?) {
@@ -931,9 +933,9 @@ class BaseTerminalController: NSWindowController,
 
         if derivedConfig.macosTitlebarProxyIcon == .visible {
             // Use the 'to' URL directly
-            window.representedURL = to
+            window.representedURL = to ?? Bundle.main.bundleURL
         } else {
-            window.representedURL = nil
+            window.representedURL = Bundle.main.bundleURL
         }
     }
 

@@ -38,8 +38,9 @@ end
 --- Sabit port verilmez çünkü NODE_OPTIONS paket yöneticisine (npm/pnpm/yarn de node'dur) ve script'in tüm alt
 --- süreçlerine geçer; sabit portu ilk açılan süreç (paket yöneticisi) alır, asıl uygulama inspector'sız kalırdı.
 ---@return table<string, string>
-local function debug_env()
-  return { NODE_OPTIONS = vim.trim((vim.env.NODE_OPTIONS or "") .. " --inspect=127.0.0.1:0") }
+local function debug_env(item)
+  local base = item.config and item.config.vm_options or vim.env.NODE_OPTIONS or ""
+  return { NODE_OPTIONS = vim.trim(base .. " --inspect=127.0.0.1:0") }
 end
 
 --- Inspector'ı açılan bir node sürecine nvim-dap `pwa-node` attach ile bağlanır. Portu dinleyen süreç, öğenin job'ının
@@ -102,8 +103,11 @@ function M.discover(root)
           icon = "\u{F489}",
           icon_hl = "RunnerScript",
           cwd = dir,
-          cmd = function()
-            return { pm, "run", name }
+          vm_env = "NODE_OPTIONS",
+          cmd = function(item)
+            local args = item.config and item.config.args
+            -- shortcut: argümanlar boşlukla bölünür (tırnak desteği yok); gerekirse shell tarzı ayrıştırıcı
+            return vim.list_extend({ pm, "run", name }, args and vim.list_extend({ "--" }, vim.split(args, "%s+")) or {})
           end,
           debug = {
             ready = "Debugger listening on ws://[^/]-:(%d+)/",

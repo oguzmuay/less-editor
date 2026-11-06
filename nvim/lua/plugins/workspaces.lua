@@ -15,6 +15,12 @@ return {
     "nvim-neo-tree/neo-tree.nvim",
     opts = function(_, opts)
       require("workspaces.neotree").install()
+      opts.filesystem = opts.filesystem or {}
+      opts.filesystem.components = vim.tbl_extend("force", opts.filesystem.components or {}, {
+        name = function(...)
+          return require("workspaces.neotree").name_component(...)
+        end,
+      })
       opts.event_handlers = opts.event_handlers or {}
       table.insert(opts.event_handlers, {
         event = "git_status_changed",
@@ -28,6 +34,7 @@ return {
   {
     "folke/snacks.nvim",
     keys = {
+      { "<leader>fp", function() require("workspaces.ui").projects() end, desc = "Projects & Workspaces" },
       { "<leader>fw", function() require("workspaces.ui").pick() end, desc = "Workspaces" },
       { "<leader>fW", function() require("workspaces.ui").manage() end, desc = "Manage workspaces" },
     },

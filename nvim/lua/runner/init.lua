@@ -18,6 +18,8 @@ local M = {}
 ---@field profiles boolean? profil seçimi destekleniyor mu (Spring)
 ---@field debug RunnerDebug? debug desteği (yoksa Debug eylemi kapalı)
 ---@field profile string?
+---@field config RunnerConfig? kalıcı çalıştırma ayarları (`M.config`)
+---@field vm_env string? VM seçeneklerinin verildiği ortam değişkeni (Node: NODE_OPTIONS); yoksa sağlayıcı cmd'de kullanır
 ---@field buf integer?
 ---@field job integer?
 ---@field status "stopped"|"starting"|"running"|"done"|"failed"
@@ -30,6 +32,12 @@ local M = {}
 ---@field after_exit fun()?
 ---@field partial string?
 
+---@class RunnerConfig
+---@field profile string?
+---@field env table<string, string>?
+---@field vm_options string?
+---@field args string?
+
 ---@class RunnerNode
 ---@field id string
 ---@field label string
@@ -39,6 +47,7 @@ local M = {}
 ---@field children (RunnerNode|RunnerItem)[]
 
 local rdap = require("runner.dap")
+local load_configs
 
 local ns = vim.api.nvim_create_namespace("runner")
 local FT = "runner"
@@ -229,7 +238,7 @@ local function render()
   add({
     { " " .. ICON.run .. " Run", "Title" },
     {
-      "   ⏎ run/stop · d debug · r rerun · s stop · l log · p profile · m menu · ␣ fold · R rescan · q close",
+      "   ⏎ run/stop · d debug · r rerun · s stop · l log · e config · p profile · m menu · ␣ fold · R rescan · q close",
       "RunnerDetail",
     },
   })
@@ -264,6 +273,7 @@ local function render()
         { node.label, "Normal" },
         { node.port and ("  :" .. node.port) or "", "RunnerPort" },
         { node.profile and ("  [" .. node.profile .. "]") or "", "RunnerProfile" },
+        { M.has_config(node) and ("  " .. ICON.profile) or "", "RunnerProfile" },
         { badge, badge_hl },
         { node.detail and ("  " .. node.detail) or "", "RunnerDetail" },
       }, { node = node, parent = parent, buttons = buttons(node) })
@@ -315,6 +325,79 @@ end
 ---@return RunnerItem?
 function M.item(id)
   return state.items[id]
+end
+
+local function configs_file()
+  return vim.env.NVIM_RUN_CONFIGS_FILE or (vim.fn.stdpath("data") .. "/run_configs.json")
+end
+
+---@type table<string, RunnerConfig>?
+local configs
+
+---@return table<string, RunnerConfig>
+function load_configs()
+  if not configs then
+    local ok, data = pcall(function()
+      return vim.json.decode(table.concat(vim.fn.readfile(configs_file()), "\n"))
+    end)
+    configs = ok and type(data) == "table" and data or {}
+  end
+  return configs
+end
+
+--- Öğenin kalıcı çalıştırma ayarları (kopya). Kayıt `stdpath("data")/run_configs.json`, öğe id'sine göre
+--- (testte `NVIM_RUN_CONFIGS_FILE`).
+---@param item RunnerItem
+---@return RunnerConfig
+function M.config(item)
+  return vim.deepcopy(item.config or load_configs()[item.id] or {})
+end
+
+--- Ayarları kaydeder (boş değerler silinir) ve paneli yeniler; çalışan süreç kendiliğinden yeniden başlamaz.
+---@param item RunnerItem
+---@param cfg RunnerConfig
+function M.set_config(item, cfg)
+  local clean = {}
+  for k, v in pairs(cfg) do
+    if type(v) == "string" then
+      v = vim.trim(v)
+    end
+    if v ~= "" and not (type(v) == "table" and next(v) == nil) then
+      clean[k] = v
+    end
+  end
+  if not item.profiles then
+    clean.profile = nil
+  end
+  local all = load_configs()
+  all[item.id] = next(clean) and clean or nil
+  vim.fn.mkdir(vim.fs.dirname(configs_file()), "p")
+  vim.fn.writefile({ vim.json.encode(all) }, configs_file())
+  item.config, item.profile = clean, clean.profile
+  render()
+end
+
+--- Profil dışında ayar (ortam, VM seçenekleri, argüman) var mı (panelde ⚙).
+---@param item RunnerItem
+---@return boolean
+function M.has_config(item)
+  local c = item.config or {}
+  return c.env ~= nil or c.vm_options ~= nil or c.args ~= nil
+end
+
+--- Tüm öğeler (proje kökü değiştiyse ya da hiç taranmadıysa önce taranır, `open_panel` gibi).
+---@return RunnerItem[]
+function M.items()
+  local roots = M.roots()
+  if table.concat(roots, "\n") ~= state.root then
+    M.scan(roots)
+    render()
+  end
+  local list = vim.tbl_values(state.items)
+  table.sort(list, function(a, b)
+    return a.id < b.id
+  end)
+  return list
 end
 
 --- Taranacak kök klasörler: workspace açıksa tüm kökleri, değilse çalışma klasörü.
@@ -373,6 +456,8 @@ function M.scan(roots)
           node.children[i] = prev
         else
           child.status = "stopped"
+          child.config = vim.deepcopy(load_configs()[child.id] or {})
+          child.profile = child.config.profile
           state.items[child.id] = child
         end
         seen[child.id] = true
@@ -536,7 +621,15 @@ function M.start(item, mode)
   item.status, item.port, item.stopping = item.ready and "starting" or "running", nil, false
   item.mode, item.debug_port, item.debug_targets, item.dap_state, item.partial = mode, debug_port, {}, nil, nil
   local cmd = item.cmd(item)
-  local env = mode == "debug" and item.debug.env and item.debug.env(item) or nil
+  local cfg = item.config or {}
+  local env = vim.deepcopy(cfg.env or {})
+  if item.vm_env and (cfg.vm_options or "") ~= "" then
+    env[item.vm_env] = cfg.vm_options
+  end
+  if mode == "debug" and item.debug.env then
+    env = vim.tbl_extend("force", env, item.debug.env(item))
+  end
+  env = next(env) and env or nil
   vim.api.nvim_buf_call(item.buf, function()
     item.job = vim.fn.jobstart(cmd, {
       term = true,
@@ -665,12 +758,70 @@ function M.set_profile(item)
     if input == nil then
       return
     end
-    item.profile = input ~= "" and input or nil
-    render()
+    M.set_config(item, vim.tbl_extend("force", M.config(item), { profile = input ~= "" and input or nil }))
     if item.job then
       M.rerun(item)
     end
   end)
+end
+
+--- `KEY=value; KEY2=value` → tablo (formdaki ortam alanı).
+---@param s string
+---@return table<string, string>?, string? err
+local function parse_env(s)
+  local env = {}
+  for part in vim.gsplit(s, ";", { plain = true, trimempty = true }) do
+    part = vim.trim(part)
+    if part ~= "" then
+      local k, v = part:match("^([%a_][%w_]*)%s*=%s*(.*)$")
+      if not k then
+        return nil, "Environment must look like KEY=value; KEY2=value (bad: " .. part .. ")"
+      end
+      env[k] = v
+    end
+  end
+  return env
+end
+
+---@param env table<string, string>?
+---@return string
+local function format_env(env)
+  local keys = vim.tbl_keys(env or {})
+  table.sort(keys)
+  return table.concat(vim.tbl_map(function(k)
+    return k .. "=" .. env[k]
+  end, keys), "; ")
+end
+
+--- Çalıştırma ayarları formu (IntelliJ Run Configuration gibi): profil (Spring), ortam, VM seçenekleri, argümanlar.
+--- Çalışan öğe kaydedilince yeni ayarlarla yeniden başlar.
+---@param item RunnerItem
+function M.edit_config(item)
+  local cfg = M.config(item)
+  local fields = {}
+  if item.profiles then
+    fields[#fields + 1] = { key = "profile", label = "Profile", value = cfg.profile, hint = "dev,local" }
+  end
+  vim.list_extend(fields, {
+    { key = "env", label = "Environment", value = format_env(cfg.env), hint = "KEY=value; KEY2=value" },
+    { key = "vm_options", label = item.vm_env and "Node options" or "VM options", value = cfg.vm_options,
+      hint = item.vm_env and "--max-old-space-size=4096" or "-Xmx1g -Dfoo=bar" },
+    { key = "args", label = "Program arguments", value = cfg.args, hint = "--server.port=8081" },
+  })
+  require("datasource.form").open({
+    title = item.label .. " · Run configuration",
+    fields = fields,
+    submit = function(v)
+      local env, err = parse_env(v.env)
+      if not env then
+        return err
+      end
+      M.set_config(item, { profile = v.profile, env = env, vm_options = v.vm_options, args = v.args })
+      if item.job then
+        M.rerun(item)
+      end
+    end,
+  })
 end
 
 --- Öğenin o anki durumuna uyan eylemler (sağ tık menüsü ve `Space j` seçicisi için).
@@ -701,6 +852,7 @@ local function actions(item)
   if item.buf and vim.api.nvim_buf_is_valid(item.buf) then
     add(ICON.log, "Show log", M.logs)
   end
+  add(ICON.profile, "Edit configuration…", M.edit_config)
   if item.profiles then
     add(ICON.profile, "Set profile…" .. (item.profile and (" [" .. item.profile .. "]") or ""), M.set_profile)
   end
@@ -854,6 +1006,7 @@ local function create_buf()
   map("s", on_item(M.stop))
   map("l", on_item(M.logs))
   map("p", on_item(M.set_profile))
+  map("e", on_item(M.edit_config))
   map("m", on_item(M.menu))
   vim.keymap.set("n", "R", function()
     M.scan(state.roots or M.roots())

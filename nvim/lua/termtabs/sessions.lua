@@ -198,8 +198,8 @@ end
 --- waitingFor, name, nameSource. Claude Code bu dosyayı her durum değişiminde günceller; /clear sonrası sessionId değişir.
 ---@param pid integer
 ---@return table?
-function M.process_info(pid)
-  local data = read_file(("%s/sessions/%d.json"):format(root, pid))
+function M.process_info(pid, dir)
+  local data = read_file(("%s/sessions/%d.json"):format(dir or root, pid))
   local ok, info = pcall(vim.json.decode, data or "", json_opts)
   return ok and type(info) == "table" and info or nil
 end
@@ -208,17 +208,18 @@ end
 --- Kaçış kuralı tutmazsa tüm proje klasörlerinde aranır. Oturumda henüz mesaj yoksa dosya da yoktur.
 ---@param info table
 ---@return string?
-function M.transcript_path(info)
+function M.transcript_path(info, dir)
+  local base = dir or root
   if type(info.sessionId) ~= "string" then
     return
   end
   if type(info.cwd) == "string" then
-    local path = ("%s/projects/%s/%s.jsonl"):format(root, info.cwd:gsub("[^%w]", "-"), info.sessionId)
+    local path = ("%s/projects/%s/%s.jsonl"):format(base, info.cwd:gsub("[^%w]", "-"), info.sessionId)
     if vim.uv.fs_stat(path) then
       return path
     end
   end
-  return vim.fn.glob(("%s/projects/*/%s.jsonl"):format(root, info.sessionId), true, true)[1]
+  return vim.fn.glob(("%s/projects/*/%s.jsonl"):format(base, info.sessionId), true, true)[1]
 end
 
 --- Oturumun alt ajan (subagents/*.jsonl) transcript'lerindeki token toplamı.
@@ -262,12 +263,12 @@ end
 --- Claude Code sürecinin (pid) anlık durumu: oturum kaydı + transcript'ten başlık, token ve son etkinlik.
 ---@param pid integer
 ---@return termtabs.Snapshot?
-function M.snapshot(pid)
-  local info = M.process_info(pid)
+function M.snapshot(pid, dir)
+  local info = M.process_info(pid, dir)
   if not info then
     return
   end
-  local path = M.transcript_path(info)
+  local path = M.transcript_path(info, dir)
   local st = path and M.read(path) or new_state()
   local sub, sub_count = 0, 0
   if path then

@@ -12,7 +12,8 @@ M.excluded_filetypes = {
   "gitstatus",
   "gitblame",
   "termtabs-summary",
-  "dbui",
+  "datasource",
+  "dsdata",
   "dbout",
   "qf",
   "help",
@@ -46,6 +47,9 @@ M.excluded_filetypes = {
 --- Kod penceresine hizalama için boş winbar verilen (sayaç göstermeyen) filetype'lar.
 --- GitBlame sütunu kod penceresiyle scrollbind'lı; winbar yüksekliği farklı olursa satırlar bir kayar.
 local ALIGN_FILETYPES = { gitblame = true }
+
+--- Sayaç yerine kendi winbar'ını gösteren filetype'lar (Database veri tab'ının sabit tablo başlığı).
+local CUSTOM_WINBARS = { dsdata = "%!v:lua.require'datasource.grid'.winbar()" }
 
 local SEVERITIES = {
   { sev = vim.diagnostic.severity.ERROR, name = "Error", hl = "DiagnosticError" },
@@ -224,8 +228,11 @@ local function apply(win)
     want = WINBAR
   elseif ALIGN_FILETYPES[ft] then
     want = BLANK
+  elseif CUSTOM_WINBARS[ft] then
+    want = CUSTOM_WINBARS[ft]
   end
-  if current == want or (current ~= "" and current ~= WINBAR and current ~= BLANK) then
+  local ours = current == "" or current == WINBAR or current == BLANK or vim.tbl_contains(vim.tbl_values(CUSTOM_WINBARS), current)
+  if current == want or not ours then
     return
   end
   vim.api.nvim_set_option_value("winbar", want, { win = win, scope = "local" })
@@ -257,7 +264,8 @@ local function set_highlights()
   vim.api.nvim_set_hl(0, "WinBarProblemsArrow", { default = true, link = "Comment" })
 end
 
---- Autocmd'leri kurar: pencere/buffer değişiminde winbar ataması, `DiagnosticChanged`'de yeniden çizim.
+--- Autocmd'leri kurar: pencere/buffer değişiminde winbar ataması, `DiagnosticChanged`'de yeniden çizim; hata tooltip'i
+--- (`problems.hover`).
 function M.setup()
   set_highlights()
   local group = vim.api.nvim_create_augroup("problems", { clear = true })
@@ -276,6 +284,7 @@ function M.setup()
     end,
   })
   vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_highlights })
+  require("problems.hover").setup()
   M.refresh()
 end
 

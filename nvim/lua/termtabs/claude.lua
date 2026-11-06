@@ -24,9 +24,22 @@ end
 ---@param focus? boolean
 local function create(cmd, env, config, focus)
   local argv = require("claudecode.utils").parse_command(cmd)
+  local accounts = require("termtabs.accounts")
+  local agents = require("termtabs.agents")
+  local account = accounts.current()
+  local ai = agents.launch("claude", config.cwd or vim.fn.getcwd())
+  vim.list_extend(argv, { "--append-system-prompt", ai.text })
+  vim.list_extend(argv, ai.mcp_argv) -- --mcp-config çok değer alır, sonda kalmalı
+  env = vim.tbl_extend("force", env or {}, accounts.env(account), ai.env)
+  if env.CLAUDE_CODE_SSE_PORT then
+    accounts.link_ide(account, env.CLAUDE_CODE_SSE_PORT)
+  end
   local buf = tt().spawn("claude", argv, {
     cwd = config.cwd,
     env = env,
+    account = account,
+    agent = "claude",
+    ai_name = ai.name,
     enter = focus ~= false,
     width = math.floor(vim.o.columns * (config.split_width_percentage or 0.38)),
     on_exit = function(code)
@@ -36,6 +49,7 @@ local function create(cmd, env, config, focus)
     end,
   })
   if buf then
+    agents.prepare(ai.dir)
     vim.keymap.set("t", "<S-CR>", function()
       vim.api.nvim_feedkeys("\\", "t", true)
       vim.defer_fn(function()
@@ -48,6 +62,10 @@ end
 --- Mevcut oturum varsa paneli gösterir, yoksa (ya da yeni oturum istendiyse) yeni oturum açar.
 local function open(cmd, env, config, focus)
   focus = focus ~= false
+  local default = require("termtabs.agents").default()
+  if not new_requested and not has_args(cmd) and #tt().tabs("claude") == 0 and default ~= "claude" then
+    return require("termtabs.agents").open(default)
+  end
   if new_requested or has_args(cmd) or #tt().tabs("claude") == 0 then
     new_requested = false
     create(cmd, env, config, focus)
@@ -142,7 +160,14 @@ M.provider = {
     return true
   end,
   get_active_bufnr = function()
-    return tt().active("claude")
+    local tabs = vim.tbl_filter(function(t) return t.agent == "claude" end, tt().tabs("claude"))
+    local active = tt().active("claude")
+    for _, t in ipairs(tabs) do
+      if t.buf == active then
+        return active
+      end
+    end
+    return tabs[#tabs] and tabs[#tabs].buf
   end,
   open = open,
   close = function()

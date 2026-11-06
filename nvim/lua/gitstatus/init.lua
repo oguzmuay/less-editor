@@ -44,7 +44,7 @@ local state = {
 ---@param repo string
 ---@param args string[]
 ---@return boolean ok, string stdout
-local function git(repo, args)
+function M.git(repo, args)
   local res = vim.system(vim.list_extend({ "git" }, args), { cwd = repo, text = true }):wait()
   if res.code ~= 0 then
     local msg = vim.trim((res.stderr or "") ~= "" and res.stderr or (res.stdout or ""))
@@ -52,13 +52,14 @@ local function git(repo, args)
   end
   return res.code == 0, res.stdout or ""
 end
+local git = M.git
 
 --- `git status --porcelain=v1 -z` çıktısını bölümlere ayırır. Hem index'te hem çalışma ağacında değişen dosya
 --- (ör. `MM`) hem Staged hem Changes altında görünür. `--no-optional-locks`: status index'i yazmasın, yoksa
 --- `.git` izleyicisi kendi yenilemesiyle tekrar tetiklenirdi.
 ---@param repo string
 ---@return { branch: string, conflicts: GitStatusEntry[], staged: GitStatusEntry[], changes: GitStatusEntry[], untracked: GitStatusEntry[] }
-local function status(repo)
+function M.status(repo)
   local out = { branch = "", conflicts = {}, staged = {}, changes = {}, untracked = {} }
   local ok, stdout = git(repo, { "--no-optional-locks", "status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all" })
   if not ok then
@@ -97,6 +98,7 @@ local function status(repo)
   end
   return out
 end
+local status = M.status
 
 --- Dosya ikonu ve vurgusu (mini.icons; yoksa düz ikon).
 ---@param path string
@@ -333,10 +335,16 @@ local function discard(e)
     if choice ~= action then
       return
     end
-    git(e.repo, untracked and { "clean", "-f", "-q", "--", e.path } or { "checkout", "-q", "--", e.path })
-    M.refresh()
-    vim.cmd.checktime()
+    M.discard_entry(e)
   end)
+end
+
+--- Onaysız geri alma (çağıran onayı almış olmalı: panel menüsü ya da `lessmcp.approve`).
+---@param e GitStatusEntry Changes ya da Untracked girdisi
+function M.discard_entry(e)
+  git(e.repo, e.section == "untracked" and { "clean", "-f", "-q", "--", e.path } or { "checkout", "-q", "--", e.path })
+  M.refresh()
+  vim.cmd.checktime()
 end
 
 --- İmlecin (ya da verilen satırın) girdisi.

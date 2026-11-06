@@ -12,7 +12,11 @@ local sessions = require("termtabs.sessions")
 ---@field cwd string
 ---@field name string? kullanıcının verdiği ad (:R / :TerminalRename)
 ---@field auto string? otomatik ad (shell: süreç/klasör, Claude: oturum başlığı); zamanlayıcı günceller
----@field meta termtabs.Snapshot? yalnızca Claude sekmeleri
+---@field meta termtabs.Snapshot? AI sekmeleri (Claude dışında yalnız `status`, `simple = true`)
+---@field agent string? AI türü (termtabs.agents.kinds)
+---@field ai_name string? AI adı ("codex-1"); posta kutusu adı
+---@field account table? Claude hesabı
+---@field tick integer? son bakılan changedtick (Claude dışı durum tahmini)
 
 ---@class termtabs.Group
 ---@field tabs termtabs.Tab[]
@@ -231,7 +235,14 @@ function M.spawn(group, argv, opts)
   local buf = vim.api.nvim_create_buf(false, false)
   vim.b[buf].termtabs = group
   g.seq = g.seq + 1
-  local tab = { buf = buf, n = g.seq, cwd = opts.cwd or vim.fn.getcwd() }
+  local tab = {
+    buf = buf,
+    n = g.seq,
+    cwd = opts.cwd or vim.fn.getcwd(),
+    account = opts.account,
+    agent = opts.agent or (group == "claude" and "claude" or nil),
+    ai_name = opts.ai_name,
+  }
   table.insert(g.tabs, tab)
   g.current, g.active = buf, buf
   local win = M.win(group)
@@ -364,7 +375,13 @@ function M.refresh_tab(tab, group)
     tab.auto = shell_title(tab)
     return
   end
-  tab.meta = tab.pid and sessions.snapshot(tab.pid) or nil
+  if tab.agent ~= "claude" then
+    local tick = vim.api.nvim_buf_is_valid(tab.buf) and vim.api.nvim_buf_get_changedtick(tab.buf) or 0
+    tab.meta = { status = tab.tick and tick ~= tab.tick and "busy" or "idle", simple = true }
+    tab.tick = tick
+    return
+  end
+  tab.meta = tab.pid and sessions.snapshot(tab.pid, tab.account and tab.account.dir) or nil
   tab.auto = tab.meta and tab.meta.title or nil
 end
 
@@ -373,7 +390,9 @@ end
 ---@param group termtabs.GroupName
 ---@return string
 function M.label(tab, group)
-  return tab.name or tab.auto or fallback_names[group]:format(tab.n)
+  local kind = tab.agent and require("termtabs.agents").kinds[tab.agent]
+  local n = tab.ai_name and tab.ai_name:match("%-(%d+)$")
+  return tab.name or tab.auto or (kind and n and (kind.label .. " " .. n)) or fallback_names[group]:format(tab.n)
 end
 
 --- Claude oturumunun durum simgesi: ● çalışıyor, ◐ onay/girdi bekliyor, ○ boşta.
@@ -488,7 +507,7 @@ end
 function M.new_tab()
   local group = M.group_of(vim.api.nvim_get_current_buf())
   if group == "claude" then
-    require("termtabs.claude").new_session()
+    require("termtabs.agents").pick()
   elseif group == "shell" then
     M.new_shell(true)
   else
@@ -499,6 +518,8 @@ function M.new_tab()
     if had_code then
       vim.cmd.enew()
     end
+    vim.b.workbench_scratch = true
+    vim.bo.modifiable = true
   end
 end
 
@@ -556,6 +577,7 @@ function M.start_timer()
         return
       end
       refresh()
+      require("termtabs.agents").tick()
     end)
   )
 end
@@ -593,7 +615,7 @@ function _G.TermTabsNew(minwid)
     vim.api.nvim_set_current_win(win)
   end
   if minwid == 1 then
-    require("termtabs.claude").new_session()
+    require("termtabs.agents").pick()
   else
     M.new_shell(true)
   end

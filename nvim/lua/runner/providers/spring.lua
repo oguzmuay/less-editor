@@ -25,30 +25,44 @@ local function jdwp(item)
 end
 
 --- Spring Boot uygulamasını çalıştıracak komutu oluşturur. Proje içinde mvnw/gradlew varsa onu, yoksa global aracı kullanır.
+--- Çalıştırma ayarları (`item.config`): VM seçenekleri jvmArguments / init script'le, argümanlar uygulamaya.
 --- Debug modunda (`item.mode == "debug"`) JDWP ajanı eklenir: Maven'da `spring-boot.run.jvmArguments`, Gradle'da
 --- `bootRun` görevine jvmArgs ekleyen init script'i (`jdwp.gradle`, `-PrunnerJdwp=`).
 ---@param item RunnerItem
 ---@return string[]
 local function build_cmd(item)
   local debugging = item.mode == "debug" and item.debug_port
+  local cfg = item.config or {}
+  local vm, args = cfg.vm_options, cfg.args
   if item.tool == "maven" then
     local wrapper = vim.fs.find("mvnw", { upward = true, path = item.cwd, type = "file" })[1]
     local cmd = { wrapper or "mvn", "spring-boot:run" }
     if item.profile then
       table.insert(cmd, "-Dspring-boot.run.profiles=" .. item.profile)
     end
-    if debugging then
-      table.insert(cmd, "-Dspring-boot.run.jvmArguments=-agentlib:jdwp=" .. jdwp(item))
+    local jvm = vim.trim((vm or "") .. (debugging and (" -agentlib:jdwp=" .. jdwp(item)) or ""))
+    if jvm ~= "" then
+      table.insert(cmd, "-Dspring-boot.run.jvmArguments=" .. jvm)
+    end
+    if args then
+      table.insert(cmd, "-Dspring-boot.run.arguments=" .. args)
     end
     return cmd
   end
   local wrapper = vim.fs.find("gradlew", { upward = true, path = item.cwd, type = "file" })[1]
   local cmd = { wrapper or "gradle", "bootRun" }
-  if item.profile then
-    table.insert(cmd, "--args=--spring.profiles.active=" .. item.profile)
+  local app_args = vim.trim((item.profile and ("--spring.profiles.active=" .. item.profile) or "") .. " " .. (args or ""))
+  if app_args ~= "" then
+    table.insert(cmd, "--args=" .. app_args)
+  end
+  if debugging or vm then
+    vim.list_extend(cmd, { "--init-script", GRADLE_INIT })
   end
   if debugging then
-    vim.list_extend(cmd, { "--init-script", GRADLE_INIT, "-PrunnerJdwp=" .. jdwp(item) })
+    table.insert(cmd, "-PrunnerJdwp=" .. jdwp(item))
+  end
+  if vm then
+    table.insert(cmd, "-PrunnerJvmArgs=" .. vm)
   end
   return cmd
 end

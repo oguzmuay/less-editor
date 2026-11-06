@@ -10,17 +10,19 @@
 ## Ekran düzeni
 
 ```
-┌ Git/Files/DB ┬───── Kod (tablar üstte) ─────┬─ Claude Code ─┐
+┌─ Git/Files ──┬───── Kod (tablar üstte) ─────┬─ Claude Code ─┐
 │ (Cmd+0)      │          (Cmd+2)             │   (Cmd+3)     │
 │ (Cmd+1)      │                              │               │
-│ (Cmd+5)      │                              ├───────────────┤
+│              │                              ├───────────────┤
 ├──────────────┴──────────────────────────────┤  Terminal     │
 │ Alt şerit: Run (Cmd+6) YA DA Git History (7)│   (Cmd+4)     │
 └─────────────────────────────────────────────┴───────────────┘
 ```
 
 - Sağ sütun her zaman tam boy; sırası hep **üstte Claude, altta terminal** (hangisi önce açılırsa açılsın).
-- Alt şerit açıkken her zaman sol panellerin (Git / Files / Database) altına uzanır (sol panel sonradan açılsa da şeridin üstüne çıkmaz); sağ sütunun altına giremez.
+- **Database (Cmd+5)** sağ sütunda Claude ve terminalin yerine açılır; kapanınca açık olanlar geri gelir.
+  Database açıkken Claude/terminal açılırsa Database kapanır.
+- Alt şerit açıkken her zaman sol panellerin (Git / Files) altına uzanır (sol panel sonradan açılsa da şeridin üstüne çıkmaz); sağ sütunun altına giremez.
 - Sol paneller birbirinin yerine geçmez, yan yana açılabilir (Git en solda).
 - Uzun mesajlar (ve `:Noice` geçmişi) da alt şeritte açılır, `q` ile kapanır; Run / Git History ile aynı yeri paylaşır.
 - Ortadaki kod penceresi `:q` / `:wq` / `Space w d` ile kapanmaz (`:wq` yine kaydeder). Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q.
@@ -34,12 +36,13 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 |---|---|---|
 | **Cmd+1** | `Space 1` | Dosyalar (neo-tree) |
 | **Cmd+2** | `Space 2` | Kod — panelden geçince en baştaki **pinli** tab, pin yoksa son kullanılan editör penceresi |
-| **Cmd+3** | `Space 3` | Claude Code |
+| **Cmd+3** | `Space 3` | AI paneli (Claude, Codex, Gemini, Ollama) — boşsa son seçtiğin AI açılır |
 | **Cmd+4** | `Space 4` | Terminal |
-| **Cmd+5** | `Space 5` | Veritabanı (dadbod-ui) |
+| **Cmd+N** | — | Files panelinde yeni dosya, başka yerde yeni LESS penceresi |
+| **Cmd+5** | `Space 5` | Database (sağ sütunda, Claude/terminal yerine) |
 | **Cmd+6** | `Space 6` | Run (Spring Boot + Node script'leri) |
 | **Cmd+7** | `Space 7` | Git History (commit geçmişi, alt şerit) |
-| **Cmd+0** | `Space 0` | Git (commit edilmemiş dosyalar, sol) — stage / unstage |
+| **Cmd+0** | `Space 0` | Git (commit edilmemiş dosyalar, sol; Files ile aynı yerde, biri açılınca diğeri kapanır) — stage / unstage |
 | **`Space j`** | | Panel açmadan Run öğesi seç, sonra eylem (Run / Stop / Debug / Rerun…) |
 
 ## Panel komutları (`:` ile)
@@ -49,7 +52,7 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 | **`:Files`** | Dosya gezgini | Aç / kapat |
 | **`:UIReset`** / **Cmd+Shift+0** | Tüm paneller | Genişlik/yükseklikleri varsayılana döndürür (AI sütunu kodu kapatınca) |
 | **`:Code`** | Kod penceresi | Koda odaklanır (toggle değil) |
-| **`:Claude`** | Claude Code | Aç / kapat |
+| **`:AI`** (ya da `:Claude`) | AI paneli | Aç / kapat · `:AI new` seçici · `:AI codex` / `gemini` / `ollama` / `claude` doğrudan · `:AI account` Claude hesabı |
 | **`:Terminal`** | Terminal | Aç / kapat |
 | **`:Datasource`** | Veritabanı | Aç / kapat |
 | **`:Run`** | Run paneli (alt şerit) | Aç / kapat; alt şeritteki diğer aracı gizler |
@@ -95,7 +98,10 @@ Terminal ve Claude panelinde Cmd+Sol/Sağ shell'e satır başı/sonu, Option+Sol
 
 | Ne | Nasıl |
 |---|---|
-| Workspace listesi / aç | Açılış ekranında **`w`** · **`:Workspace`** · **`Space f w`** (açık olan ● ile işaretli; listenin sonunda "＋ Create new workspace…" ve "⚙ Manage workspaces…") |
+| Projeler + workspace'ler tek listede | Açılış ekranında **`p`** · **`Space f p`** (satırda `project` / `workspace` etiketi, açık olan ●; sonda "Open folder…" ve "New workspace…"; Ctrl+O klasör açar) |
+| Yeni proje (daha önce açılmamış klasör) | Açılış ekranında **`o`** (Open Folder) |
+| Yeni workspace | Açılış ekranında **`w`** (New Workspace) |
+| Workspace listesi / aç | **`:Workspace`** · **`Space f w`** (açık olan ● ile işaretli; listenin sonunda "＋ Create new workspace…" ve "⚙ Manage workspaces…") |
 | Yönetim menüsü | **`Space f W`** · `:Workspace manage [ad]` → Open / Add folder… / Remove folder… / Rename… / Delete… |
 | Yeni workspace | `:Workspace new [ad]` (ad + ilk klasör sorulur, sonra yönetim menüsü açılır) |
 | Klasör ekle | `:Workspace add [yol]` (Tab ile tamamlanır; yol yoksa: ağaçta seçili klasör / çalışma klasörü / son projeler / yol yaz) |
@@ -103,7 +109,7 @@ Terminal ve Claude panelinde Cmd+Sol/Sağ shell'e satır başı/sonu, Option+Sol
 | Doğrudan aç | `:Workspace open <ad>` (Tab ile tamamlanır) |
 | Workspace'ten çık | `:Workspace close` |
 
-Workspace açıkken: Cmd+1'de tüm klasörler üst düğüm olarak görünür, Cmd+F / Cmd+Shift+F hepsinde arar,
+Workspace açıkken: Cmd+1'de tüm klasörler üst düğüm olarak görünür (git reposuysa yanında o anki branch), Cmd+F / Cmd+Shift+F hepsinde arar,
 Cmd+6 hepsinin Spring/Node öğelerini listeler, Cmd+7'de `g` ile repo seçilir, Cmd+0 tüm repoları alt alta gösterir. Her workspace'in kendi oturumu vardır.
 Listelerde mouse ile çift tık seçer.
 
@@ -114,6 +120,9 @@ Listelerde mouse ile çift tık seçer.
 | **Cmd+F** | Dosya adıyla ara (tüm repo) |
 | **Cmd+Shift+F** | Dosya içeriğinde ara (tüm repo) |
 | **Cmd+E** | Son açılan dosyalar |
+| `:Claude account` | Claude hesabı seç ya da ekle (yeni oturumlar o hesapla açılır; açık oturumlar kendi hesabında kalır) |
+| Menü: **File > Open Recent** / **Open Folder…** | Son projeyi / workspace'i ya da bir klasörü yeni LESS penceresinde aç · **File > New Window** (ya da Cmd+N) dashboard'la açılır (`p` ile proje seç) |
+| **Cmd+K** / `:Shortcuts` | Kısayol ara (bu dosyadaki tüm kısayollar; ör. "coklu satir", "kopyala") |
 | `Space Space` | Dosya ara (sadece bulunduğun alt proje) |
 | `Space /` | İçerikte ara (sadece bulunduğun alt proje) |
 | `Space ,` | Açık tablar arasında ara |
@@ -135,9 +144,10 @@ Arama listelerinde: oklarla gez, Enter ile aç, Esc ile kapat.
 | `i` / `a` / `o` | Yazma moduna geç (imleçten önce / sonra / alt satıra) |
 | `Esc` | Normal moda dön |
 | `u` / `Ctrl+R` | Geri al / yinele |
-| `v` + oklar | Karakter seç · `V` satır seç |
-| `y` / `d` / `p` | Seçimi kopyala / kes / yapıştır (sistem panosu ile ortak) |
-| `yy` / `dd` | Satırı kopyala / sil |
+| `v` + oklar | Karakter seç · `V` satır seç · çoklu satır: `V5j` bu satır + alttaki 5 satır (göreli numaralar) · fareyle sürükle |
+| `y` / `d` / `p` | Seçimi kopyala / kes / yerine yapıştır (sistem panosu ile ortak) |
+| `yy` / `dd` | Satırı kopyala / kes · `5yy` / `5dd` 5 satır |
+| `p` / `P` | Yapıştır: imlecin altına (sağına) / üstüne (soluna) |
 | `Option+J` / `Option+K` | Satırı (veya seçimi) aşağı / yukarı taşı |
 | `gco` / `gcO` | Alta / üste yorum satırı ekle |
 | `Space c f` | Dosyayı formatla |
@@ -161,6 +171,8 @@ Arama listelerinde: oklarla gez, Enter ile aç, Esc ile kapat.
 | `]d` / `[d` | Sonraki / önceki uyarı-hata |
 | `]e` / `[e` | Sonraki / önceki hata |
 | `Space c d` | Satırdaki hatayı göster |
+| İmleç hatalı satırda durunca · fare satırın üstünde bekleyince | Hata/uyarının tam metni tooltip olarak açılır (imleç oynayınca / fare çıkınca kapanır) |
+| Fare metot / sınıf / alan adının üstünde bekleyince | Dokümantasyon (Javadoc, JSDoc) tooltip'i; satırda hata varsa altında. Klavyeyle: `K` |
 | `Space x x` | Tüm hatalar listesi |
 | `Space s s` | Dosyadaki semboller |
 | `Space c l` | LSP durumu · `Space c m` Mason |
@@ -186,6 +198,22 @@ Sayaç biçimi: ` 3   1  ↑  ↓`; problem yoksa yeşil `✓`.
 Java: bir projeyi ilk açışta jdtls Maven import + indeksleme yapar (30–90 sn). Sorun olursa
 `rm -rf ~/.cache/nvim/jdtls` ile cache'i silip Neovim'i yeniden aç.
 
+## AI paneli (Claude Code, Codex, Gemini, Ollama)
+
+- Panelde **Cmd+T** (ya da tab çubuğundaki **+**): hangi AI'ın açılacağını seç; seçtiğin AI varsayılan olur.
+- Özet tab'ında her AI kendi maskotuyla: çalışırken token kazar, boşta uyur, onay beklerken "!".
+- AI'lar birbirleriyle projedeki **`.less/ai/`** klasörü üzerinden konuşur (git'e girmez): `inbox/<ad>.md` posta
+  kutuları, `shared/` ortak dosyalar, `README.md` açık AI'ların listesi. Bir AI'a mesaj düşünce, boştaysa terminaline
+  "yeni mesajın var" yazılır (Ollama'ya mesajın kendisi). Örn. Claude'a "codex-1'e auth testlerini incelemesini yaz" de.
+- **LESS araçları (MCP sunucusu `less`):** Claude, Codex ve Gemini editörü kendileri kullanabilir. Örn. "createdAt geçen
+  entity'leri editörde listele", "a.txt'yi stage et", "backend'i dev profiliyle başlat, loglarına bak",
+  "users tablosundaki son 10 kaydı getir", "bu sorguyu konsoluma yaz".
+  - Editör: dosya aç, aranabilir sonuç listesi. Git: durum, stage, unstage, discard, diff, commit aç.
+    Run: liste, başlat/durdur, log, ayarlar. Database: bağlantılar, tablolar, kolonlar, sorgu, konsola yazma.
+  - **Onay:** veritabanında okuma dışındaki her sorgu (INSERT, UPDATE, DELETE, DDL, MongoDB betikleri) ve git discard
+    ortada bir pencerede gösterilir: `y` onayla, `n` / `Esc` reddet. Okuma sorguları salt okunur oturumda onaysız çalışır.
+  - Ollama araç kullanamaz.
+
 ## Claude Code
 
 | Tuş | İş |
@@ -197,7 +225,7 @@ Java: bir projeyi ilk açışta jdtls Maven import + indeksleme yapar (30–90 s
 | `Space a a` / `Space a d` | Önerilen diff'i kabul et / reddet |
 | `Space a r` / `Space a C` | Eski oturumu seçip sürdür (resume) / son oturuma devam (continue) — **yeni bir tab'da** açılır |
 | Sağ tık → Send to Claude | Seçimi gönder (sadece seçili Claude tab'ına gider) |
-| **Cmd+T** (Claude panelindeyken) · `:ClaudeNew` | Yeni Claude oturumu tab'ı |
+| **Cmd+T** (AI panelindeyken) | Yeni AI oturumu: Claude / Codex / Gemini / Ollama seç · `:ClaudeNew` doğrudan yeni Claude |
 | **Cmd+Shift+Sol / Sağ** | Summary (özet) ve Claude tabları arasında gez |
 | **`:R <ad>`** | Tab'ı yeniden adlandır (Claude'un kendi `/rename` komutu da çalışır) |
 
@@ -232,6 +260,7 @@ normal tab olur. Düzenlenmiş dosya asla kendiliğinden kapanmaz.
 
 | Tuş | İş |
 |---|---|
+| **Cmd+N** | İmlecin bulunduğu klasörde yeni dosya (imleç dosyadaysa onun klasöründe; `ad/` yazılırsa klasör) |
 | **Enter** / **tek tık** | Dosyayı **önizleme** tab'ında aç (italik; tek önizleme, sonraki dosya aynı tab'da açılır). Enter koda geçer, tek tık ağaçta kalır |
 | **Aynı dosyada tekrar Enter / çift tık** | Normal tab yap |
 | **Sağ ok** | Normal tab olarak aç (klasörse genişlet) |
@@ -257,7 +286,8 @@ Repo kökündeki Spring Boot uygulamalarını ve tüm `package.json` script'leri
 | `d` | Debug: duruyorsa debug modunda başlat · çalışıyorsa debug moduna geçir · debugger kopmuşsa yeniden bağla |
 | `r` | Rerun: durdurup aynı modla yeniden başlat (durmuşsa son modla başlat) |
 | `s` | Durdur |
-| `m` / **sağ tık** | Eylem menüsü (Run, Stop, Debug, Rerun, Show log, Set profile…) |
+| `m` / **sağ tık** | Eylem menüsü (Run, Stop, Debug, Rerun, Show log, Edit configuration…, Set profile…) |
+| `e` | Çalıştırma ayarları (IntelliJ Run Configuration gibi): profil (Spring), ortam değişkenleri (`KEY=value; KEY2=value`), VM seçenekleri (Node: NODE_OPTIONS), program argümanları. Kalıcı; çalışıyorsa yeniden başlar. Ayar varsa satırda `` |
 | Satır sonu butonları (tek tık) | `` Run (çalışırken `` Stop) · `` Debug · `` Rerun · `` Log |
 | `l` | Logu panelin sağında aç (başlatınca otomatik açılır) |
 | `p` | Spring profili seç |
@@ -280,7 +310,7 @@ Port yakalanırsa `:8080` gibi gösterilir.
 
 | Tuş | İş |
 |---|---|
-| **Cmd+7** | Git History paneli |
+| **Cmd+7** | Git History paneli — renkli dal grafiği (● commit, ○ merge; her dal kendi renginde), etiketler: ⎇ local branch, ☁ remote branch, ◆ tag |
 | Panelde Enter / çift tık | Commit'in değişikliklerini kod editöründe **tab** olarak aç (`f` modunda yalnız o dosya) |
 | Panelde `f` | Repo geçmişi ↔ son açtığın dosyanın geçmişi |
 | Panelde `a` | Mevcut dal ↔ tüm dallar |
@@ -337,19 +367,34 @@ Diff'ler ekranı kaplamaz; kod editöründe normal bir tab olur (paneller yerind
 
 Diff tab'ı salt okunurdur (Cmd+S uyarı verir).
 
-## Veritabanı (Cmd+5)
+## Database (Cmd+5)
 
-| Tuş | İş |
+Desteklenen türler (ikonlarıyla): PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, Redis, MongoDB.
+Gerekli istemci kurulu değilse panel sorar: **Install** derseniz Homebrew ile kurar (psql: `libpq`, redis-cli: `redis`, mongosh: `mongosh`) ve istenen iş kaldığı yerden devam eder.
+
+| Panelde | İş |
 |---|---|
-| `A` | Bağlantı ekle (ör. `mysql://kullanici:sifre@localhost:3306/db`) |
-| Enter / `o` | Aç / genişlet (tabloda hazır sorgular) |
-| `R` | Yenile |
-| `d` | Sil |
-| `r` | Yeniden adlandır |
-| Sorgu dosyasında `Space S` | Sorguyu (veya seçimi) çalıştır |
-| Sorgu dosyasında `Space W` | Sorguyu kaydet |
+| `a` | Yeni bağlantı: tür seç → tek pencerede Host / Port / User / Password / Database / Options |
+| `e` (bağlantıda) | Bağlantıyı düzenle (aynı form) |
+| Enter / **Space** / tık (bağlantıda) | Sorgu konsolunu kod editöründe tab olarak aç + tabloları göster |
+| Enter / **Space** / tık (tabloda) | Veri tab'ı: kod editöründe tab olarak, çerçeveli tablo (ilk 200 satır); başlık aşağı kayınca üstte sabit kalır |
+| `e` (tabloda) | Yapı düzenleme tab'ı: kolonlar + çalıştırılabilir ALTER şablonları |
+| Sağ / Sol ok, oka tık | Bağlantıyı aç / kapat |
+| `R` · `d` · `m` / sağ tık · `q` | Yenile · sil · menü · kapat |
 
-Proje bazlı bağlantılar: repo kökünde `.lazy.lua` içine `vim.g.dbs = { dev = "..." }` (gitignore'a ekle).
+| Veri tab'ında | İş |
+|---|---|
+| Enter / çift tık / `K` | Hücrenin tam değeri (uzun metin `…` ile kesilir; JSON `jq` varsa girintili) |
+| `y` | Hücreyi panoya kopyala |
+| `R` · `q` | Yenile · kapat |
+
+| Konsolda | İş |
+|---|---|
+| **Cmd+Enter** · `Space D` | İmleçteki ifade bloğunu (boş satırla ayrılan) ya da seçimi çalıştır; sonuç alt şeritte tablo (⏎ hücre, `y` kopyala, `q` kapat) |
+
+Bağlantılar `~/.local/share/…/datasource/connections.json`'da (yalnız kullanıcı okuyabilir, parola düz metin).
+Eski dadbod-ui bağlantıları ilk açılışta içe aktarılır (`jdbc:` öneki atılır). Proje bazlı bağlantılar: repo kökünde
+`.lazy.lua` içine `vim.g.dbs = { dev = "postgresql://…" }` (gitignore'a ekle; panelde düzenlenmez).
 
 ## Debug ve test
 
@@ -385,6 +430,7 @@ Proje bazlı bağlantılar: repo kökünde `.lazy.lua` içine `vim.g.dbs = { dev
 | `Space q s` | Bu klasörde son oturumu geri yükle |
 | `Space q h` / `:Dashboard` | Açılış ekranı (editörün üstünde yüzer, panellere dokunmaz) |
 | `Space u C` | Renk teması seç |
+| `Space u t` · `:CursorTrail [on\|off]` | İmleç izini (cursor trail) aç / kapat; seçim kalıcı, varsayılan açık |
 | `Space l` | Eklenti yöneticisi ("Plugins") |
 | `Space n` | Bildirim geçmişi |
 | `:` | Komut satırı |
@@ -431,7 +477,7 @@ yeniden iner (birkaç dakika). Kısayolların hepsi aynı.
 
 | Tuş | İş |
 |---|---|
-| **Cmd+Shift+T** / Cmd+N | Yeni Ghostty sekmesi / penceresi (Cmd+T artık Neovim'e gider) |
+| **Cmd+Shift+T** / Cmd+N | Yeni Ghostty sekmesi / yeni pencere (Cmd+T ve Cmd+N Neovim üzerinden; Files panelinde Cmd+N yeni dosya) |
 | Ctrl+Tab / Ctrl+Shift+Tab | Ghostty sekmeleri arası geçiş |
 | Cmd+C / Cmd+V | Kopyala / yapıştır (mouse ile seçmek de kopyalar) |
 | Cmd+Shift+, | Ghostty ayarlarını yeniden yükle |

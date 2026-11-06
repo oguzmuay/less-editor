@@ -41,22 +41,22 @@ function M.repos()
   return repos
 end
 
---- git log çıktısını okuyup satır satır commit bilgisine çevirir.
---- Dosya modunda (--follow) git grafik çizmediği için grafik sadece repo modunda gösterilir.
----@return { graph: string, hash: string?, date: string?, author: string?, subject: string?, refs: string? }[]
+--- git log çıktısını okuyup commit listesine çevirir (topo sırada, çocuk önce). Grafik `githistory.graph` ile
+--- parent'lardan çizilir; dosya modunda (--follow) parent'lar listedeki sıradaki commit sayılır (tek şerit).
+---@return { hash: string, parents: string[], date: string, author: string, subject: string, refs: string }[]
 local function load()
   local cmd = {
     "git",
     "log",
     "--date=format:%Y-%m-%d %H:%M",
-    "--pretty=format:" .. SEP .. "%h" .. SEP .. "%ad" .. SEP .. "%an" .. SEP .. "%s" .. SEP .. "%D",
+    "--pretty=format:%h" .. SEP .. "%p" .. SEP .. "%ad" .. SEP .. "%an" .. SEP .. "%s" .. SEP .. "%D",
     "-n",
     "500",
   }
   if state.file then
     vim.list_extend(cmd, { "--follow", "--", state.file })
   else
-    table.insert(cmd, 3, "--graph")
+    table.insert(cmd, 3, "--topo-order")
     if state.all then
       table.insert(cmd, "--all")
     end
@@ -64,15 +64,67 @@ local function load()
   local res = vim.system(cmd, { cwd = state.root, text = true }):wait()
   local entries = {}
   for line in vim.gsplit(res.stdout or "", "\n", { trimempty = true }) do
-    local graph, rest = line:match("^(.-)" .. SEP .. "(.*)$")
-    if graph then
-      local f = vim.split(rest, SEP, { plain = true })
-      table.insert(entries, { graph = graph, hash = f[1], date = f[2], author = f[3], subject = f[4], refs = f[5] })
-    else
-      table.insert(entries, { graph = line })
+    local f = vim.split(line, SEP, { plain = true })
+    if #f >= 6 then
+      table.insert(entries, {
+        hash = f[1],
+        parents = vim.split(f[2], " ", { trimempty = true }),
+        date = f[3],
+        author = f[4],
+        subject = f[5],
+        refs = f[6],
+      })
+    end
+  end
+  if state.file then
+    for i, e in ipairs(entries) do
+      e.parents = entries[i + 1] and { entries[i + 1].hash } or {}
     end
   end
   return entries
+end
+
+--- Şerit renkleri ve ref etiketi vurguları (renk şemasına bağlı; her çizimde tanımlanır, şema değişse de kalır).
+local LANE_HL = { "DiagnosticInfo", "DiagnosticOk", "DiagnosticWarn", "Function", "Constant", "DiagnosticHint", "Special",
+  "DiagnosticError" }
+local function define_hl()
+  for i, link in ipairs(LANE_HL) do
+    vim.api.nvim_set_hl(0, "GitHistoryLane" .. i, { link = link, default = true })
+  end
+  vim.api.nvim_set_hl(0, "GitHistoryHead", { link = "Title", default = true })
+  vim.api.nvim_set_hl(0, "GitHistoryLocal", { link = "DiagnosticOk", default = true })
+  vim.api.nvim_set_hl(0, "GitHistoryRemote", { link = "DiagnosticWarn", default = true })
+  vim.api.nvim_set_hl(0, "GitHistoryTag", { link = "Constant", default = true })
+end
+
+--- `%D` ref listesini renkli parçalara böler: HEAD, local branch, remote branch (`<remote>/…`), tag.
+---@param refs string
+---@param remotes string[]
+---@return { [1]: string, [2]: string }[]
+local function ref_parts(refs, remotes)
+  local parts = {}
+  local function add(text, hl)
+    parts[#parts + 1] = { text, hl }
+  end
+  for i, ref in ipairs(vim.split(refs, ", ", { plain = true, trimempty = true })) do
+    add(i == 1 and "  " or " ", "Normal")
+    local head, branch = ref:match("^(HEAD) %-> (.+)$")
+    if head then
+      add("HEAD → ", "GitHistoryHead")
+      ref = branch
+    end
+    local tag = ref:match("^tag: (.+)$")
+    if tag then
+      add("◆ " .. tag, "GitHistoryTag")
+    elseif ref == "HEAD" then
+      add("HEAD", "GitHistoryHead")
+    elseif vim.iter(remotes):any(function(r) return vim.startswith(ref, r .. "/") end) then
+      add("☁ " .. ref, "GitHistoryRemote")
+    else
+      add("⎇ " .. ref, "GitHistoryLocal")
+    end
+  end
+  return parts
 end
 
 --- Metni verilen genişliğe kırpar veya boşlukla doldurur.
@@ -101,28 +153,41 @@ function M.refresh()
     .. " · q close"
   local lines, marks = { header .. hint }, { { 0, 0, #header, "Title" }, { 0, #header, -1, "Comment" } }
   state.line_map = {}
-  for _, e in ipairs(load()) do
+  define_hl()
+  local entries = load()
+  local rows = require("githistory.graph").layout(entries)
+  local width = 0
+  for _, cells in ipairs(rows) do
+    width = math.max(width, #cells)
+  end
+  local remotes = vim.split(
+    vim.system({ "git", "remote" }, { cwd = state.root, text = true }):wait().stdout or "",
+    "\n",
+    { trimempty = true }
+  )
+  for i, e in ipairs(entries) do
     local row = #lines
-    if not e.hash then
-      table.insert(lines, " " .. e.graph)
-      table.insert(marks, { row, 0, -1, "Comment" })
-    else
-      local parts = {
-        { " " .. e.graph, "Comment" },
-        { e.hash .. "  ", "Identifier" },
-        { e.date .. "  ", "Comment" },
-        { fit(e.author, 16) .. "  ", "String" },
-        { e.subject, "Normal" },
-        { e.refs ~= "" and ("  (" .. e.refs .. ")") or "", "Special" },
-      }
-      local text, col = "", 0
-      for _, p in ipairs(parts) do
-        table.insert(marks, { row, col, col + #p[1], p[2] })
-        text, col = text .. p[1], col + #p[1]
-      end
-      table.insert(lines, text)
-      state.line_map[row + 1] = e.hash
+    local parts = { { " " } }
+    for _, cell in ipairs(rows[i]) do
+      parts[#parts + 1] = { cell[1], cell[2] and ("GitHistoryLane" .. cell[2]) }
     end
+    parts[#parts + 1] = { string.rep(" ", width - #rows[i] + 1) }
+    vim.list_extend(parts, {
+      { e.hash .. "  ", "Identifier" },
+      { e.date .. "  ", "Comment" },
+      { fit(e.author, 16) .. "  ", "String" },
+      { e.subject, "Normal" },
+    })
+    vim.list_extend(parts, ref_parts(e.refs, remotes))
+    local text, col = "", 0
+    for _, p in ipairs(parts) do
+      if p[2] then
+        table.insert(marks, { row, col, col + #p[1], p[2] })
+      end
+      text, col = text .. p[1], col + #p[1]
+    end
+    table.insert(lines, text)
+    state.line_map[row + 1] = e.hash
   end
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

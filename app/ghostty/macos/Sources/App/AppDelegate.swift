@@ -229,6 +229,9 @@ class AppDelegate: NSObject,
         // Initial config loading
         ghosttyConfigDidChange(config: ghostty.config)
 
+        // LESS: File > Open Folder… / Open Recent (LESSFileMenu.swift)
+        LESSFileMenu.shared.install(ghostty: ghostty)
+
         // Start our update checker.
         updateController.startUpdater()
 

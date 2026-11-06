@@ -9,6 +9,7 @@ local M = {}
 
 ---@class AutorestoreConfig
 ---@field file string son proje kaydı (JSON)
+---@field recents string son açılan projeler listesi (JSON; LESS.app File > Open Recent menüsü okur)
 ---@field markers string[] bir klasörü "proje" yapan işaretçiler (`.git` her zaman önceliklidir)
 ---@field default_layout string[] proje açılınca açılacak paneller (`vim.g.default_layout` ezer)
 ---@field ignore string[] bu öneklerle başlayan klasörler "son proje" olarak kaydedilmez (geçici klasörler, testler)
@@ -16,6 +17,7 @@ local M = {}
 ---@type AutorestoreConfig
 M.config = {
   file = vim.fn.stdpath("state") .. "/autorestore.json",
+  recents = vim.fn.stdpath("state") .. "/recents.json",
   markers = {
     ".git",
     "pom.xml",
@@ -153,6 +155,53 @@ function M.remember()
   end
   vim.fn.mkdir(vim.fs.dirname(M.config.file), "p")
   pcall(vim.fn.writefile, { vim.json.encode(rec, { escape_slash = false }) }, M.config.file)
+  M.add_recent(rec)
+end
+
+--- Kaydı son açılanlar listesinin başına koyar (aynı klasör tekrar etmez, en fazla 15).
+--- Dosya `{ version = 1, items = AutorestoreRecord[] }`; LESS.app'in File > Open Recent menüsü bunu okur.
+---@param rec AutorestoreRecord
+function M.add_recent(rec)
+  local items = {}
+  local ok, data = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(M.config.recents), "\n"))
+  end)
+  for _, it in ipairs(ok and type(data) == "table" and data.items or {}) do
+    if type(it) == "table" and it.dir ~= rec.dir and #items < 14 then
+      items[#items + 1] = it
+    end
+  end
+  table.insert(items, 1, rec)
+  pcall(vim.fn.writefile, { vim.json.encode({ version = 1, items = items }, { escape_slash = false }) }, M.config.recents)
+end
+
+--- LESS penceresi kaydı: `stdpath("state")/instances/<pid>` (yalnız `LESS_APP=1`). Ölü kayıtları siler, kendini yazar,
+--- çıkışta siler. Başka canlı LESS penceresi varsa true: o zaman yeni pencere son projeyi değil dashboard'u açar
+--- (menüden / `lessed`'den klasörle açılınca `LESS_OPEN_DIR` bunu aşar).
+---@return boolean
+function M.register_instance()
+  if vim.env.LESS_APP ~= "1" then
+    return false
+  end
+  local dir = vim.fn.stdpath("state") .. "/instances"
+  vim.fn.mkdir(dir, "p")
+  local me, others = vim.fn.getpid(), false
+  for name in vim.fs.dir(dir) do
+    local pid = tonumber(name)
+    if pid and pid ~= me and vim.uv.kill(pid, 0) == 0 then
+      others = true
+    elseif pid ~= me then
+      os.remove(dir .. "/" .. name)
+    end
+  end
+  local own = ("%s/%d"):format(dir, me)
+  vim.fn.writefile({}, own)
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    callback = function()
+      os.remove(own)
+    end,
+  })
+  return others
 end
 
 --- `dir` için persistence oturum dosyası var mı (dallı ya da dalsız)?
@@ -216,7 +265,7 @@ local function open_workspace(name)
   return ws.current() ~= nil
 end
 
---- Proje klasörüne geçip oturumunu yükler.
+--- Proje klasörüne geçip oturumunu yükler (proje seçicisi de kullanır: `workspaces.ui.projects`).
 ---@param dir string
 ---@return boolean
 local function open_project(dir)
@@ -229,6 +278,8 @@ local function open_project(dir)
   load_session()
   return true
 end
+
+M.open_project = open_project
 
 --- Açılışta ne açılacağını belirler:
 --- 1. cwd bir workspace klasörü → o workspace;
@@ -292,7 +343,10 @@ end
 --- VimEnter: koşullar uygunsa son projeyi/workspace'i (ya da cwd'deki projeyi) açar; açamazsa sessizce
 --- dashboard'a bırakır.
 function M.on_vim_enter()
-  if not enabled() or vim.g.autorestore_skip or not plain_start() then
+  local explicit = vim.env.LESS_OPEN_DIR ~= nil
+  vim.env.LESS_OPEN_DIR = nil
+  local others = M.register_instance()
+  if not enabled() or vim.g.autorestore_skip or not plain_start() or (others and not explicit) then
     return
   end
   local target = M.target()

@@ -1,9 +1,12 @@
-// Run paneli debug modu: -PrunnerJdwp=<jdwp seçenekleri> verilirse her projedeki bootRun görevine JDWP ajanı ekler.
+// Run paneli: -PrunnerJdwp=<jdwp seçenekleri> JDWP ajanı, -PrunnerJvmArgs="<VM seçenekleri>" ek JVM argümanları ekler
+// (her projedeki bootRun görevine).
 def jdwp = gradle.startParameter.projectProperties.get("runnerJdwp")
-if (jdwp) {
+def jvm = gradle.startParameter.projectProperties.get("runnerJvmArgs")
+if (jdwp || jvm) {
   gradle.allprojects { project ->
     project.tasks.matching { it.name == "bootRun" }.configureEach { task ->
-      task.jvmArgs("-agentlib:jdwp=" + jdwp)
+      if (jvm) task.jvmArgs(jvm.trim().split(/\s+/) as List)
+      if (jdwp) task.jvmArgs("-agentlib:jdwp=" + jdwp)
     }
   }
 }

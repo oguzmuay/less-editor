@@ -72,6 +72,135 @@ function M.pick()
   end)
 end
 
+--- Daha önce açılmış projeler: persistence oturum dosyalarından (`/` → `%`, dal soneki `%%<dal>`), diskte duran,
+--- workspace klasörü olmayan klasörler; son kullanılana göre.
+---@return { dir: string, time: integer }[]
+local function recent_projects()
+  local ok, persistence = pcall(require, "persistence")
+  local cfg = ok and require("persistence.config").options
+  if not (cfg and cfg.dir) then
+    return {}
+  end
+  local out, seen = {}, {}
+  for _, file in ipairs(persistence.list()) do
+    local name = file:sub(#cfg.dir + 1, -5)
+    local dir = (vim.split(name, "%%", { plain = true })[1]):gsub("%%", "/")
+    if not seen[dir] and vim.fn.isdirectory(dir) == 1 and not ws().is_link_dir(dir) and dir ~= vim.env.HOME then
+      seen[dir] = true
+      local stat = vim.uv.fs_stat(file)
+      table.insert(out, { dir = dir, time = stat and stat.mtime.sec or 0 })
+    end
+  end
+  return out
+end
+
+--- Klasörü yeni (ya da kayıtlı) proje olarak açar: klasöre geçer, oturumu varsa yükler; varsayılan panel düzeni
+--- `DirChanged` ile kurulur.
+---@param dir string
+local function open_project(dir)
+  dir = ws().normalize(dir)
+  if vim.fn.isdirectory(dir) == 0 then
+    vim.notify("Folder not found: " .. dir, vim.log.levels.WARN)
+    return
+  end
+  require("autorestore").open_project(dir)
+end
+
+--- "Open Folder…" (dashboard `o`): yolu sorup klasörü proje olarak açar; daha önce açılmamış klasörler için.
+function M.open_folder()
+  vim.ui.input({ prompt = "Open folder as project: ", default = "~/", completion = "dir" }, function(path)
+    if path and vim.trim(path) ~= "" then
+      open_project(vim.trim(path))
+    end
+  end)
+end
+
+--- Projeler ve workspace'ler tek listede (dashboard `p`, `Space f p`), son kullanılana göre; her satırda türünü
+--- gösteren etiket. Sonda "Open folder…" ve "New workspace…" girişleri; Ctrl+O da klasör açar.
+function M.projects()
+  local g = vim.fn.nr2char
+  local items = {}
+  local cur = ws().current()
+  for _, w in ipairs(ws().list()) do
+    local names = vim.tbl_map(vim.fs.basename, w.roots)
+    table.insert(items, {
+      text = w.name .. " " .. table.concat(names, " "),
+      kind = "workspace",
+      name = w.name,
+      detail = #names > 0 and table.concat(names, ", ") or "(no folders)",
+      time = w.opened or 0,
+      current = cur and cur.name == w.name,
+    })
+  end
+  local cwd = vim.fn.getcwd()
+  for _, p in ipairs(recent_projects()) do
+    table.insert(items, {
+      text = vim.fs.basename(p.dir) .. " " .. p.dir,
+      kind = "project",
+      dir = p.dir,
+      name = vim.fs.basename(p.dir),
+      detail = vim.fn.fnamemodify(p.dir, ":~"),
+      time = p.time,
+      current = not cur and p.dir == cwd,
+    })
+  end
+  table.sort(items, function(a, b)
+    return a.time > b.time
+  end)
+  table.insert(items, { text = "open folder new project", kind = "action", name = "Open folder…", run = M.open_folder,
+    detail = "open a folder as a new project" })
+  table.insert(items, { text = "new workspace", kind = "action", name = "New workspace…", run = function() M.new() end,
+    detail = "group folders from different places" })
+  local badge = {
+    workspace = { g(0xf1b3) .. " workspace", "Special" },
+    project = { g(0xf07b) .. " project  ", "Directory" },
+    action = { g(0xf067) .. "          ", "Special" },
+  }
+  Snacks.picker.pick({
+    title = "Projects & Workspaces",
+    items = items,
+    layout = { preset = "select" },
+    format = function(item)
+      local b = badge[item.kind]
+      return {
+        { item.current and "● " or "  ", "DiagnosticOk" },
+        { b[1], b[2] },
+        { "  " },
+        { item.name, "SnacksPickerFile" },
+        { "  " .. item.detail, "Comment" },
+      }
+    end,
+    confirm = function(picker, item)
+      picker:close()
+      if not item then
+        return
+      end
+      vim.schedule(function()
+        if item.run then
+          item.run()
+        elseif item.kind == "workspace" then
+          ws().open(item.name)
+        else
+          open_project(item.dir)
+        end
+      end)
+    end,
+    actions = {
+      open_folder = function(picker)
+        picker:close()
+        vim.schedule(M.open_folder)
+      end,
+    },
+    win = {
+      input = {
+        keys = {
+          ["<C-o>"] = { "open_folder", mode = { "i", "n" } },
+        },
+      },
+    },
+  })
+end
+
 --- Yeni workspace: ad sorulur, ardından ilk klasör seçtirilir ve yönetim menüsü açılır.
 ---@param name string?
 function M.new(name)

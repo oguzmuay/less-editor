@@ -13,7 +13,7 @@ local nt = { "n", "t", "i", "v" }
 -- Paneller (Ghostty, Cmd+0..7'yi <D-0>..<D-7> olarak iletir)
 map(nt, "<D-1>", wb.files, { desc = "Panel: Files" })
 map(nt, "<D-2>", wb.code, { desc = "Panel: Code" })
-map(nt, "<D-3>", wb.claude, { desc = "Panel: Claude Code" })
+map(nt, "<D-3>", wb.claude, { desc = "Panel: AI" })
 map(nt, "<D-4>", wb.shell, { desc = "Panel: Terminal" })
 map(nt, "<D-5>", wb.db, { desc = "Panel: Database" })
 map(nt, "<D-6>", wb.runner, { desc = "Panel: Run" })
@@ -24,7 +24,7 @@ map(nt, "<S-D-0>", wb.reset_ui, { desc = "Reset panel sizes" })
 -- Leader karşılıkları (Cmd kullanılamayan yerler için)
 map("n", "<leader>1", wb.files, { desc = "Panel: Files" })
 map("n", "<leader>2", wb.code, { desc = "Panel: Code" })
-map("n", "<leader>3", wb.claude, { desc = "Panel: Claude Code" })
+map("n", "<leader>3", wb.claude, { desc = "Panel: AI" })
 map("n", "<leader>4", wb.shell, { desc = "Panel: Terminal" })
 map("n", "<leader>5", wb.db, { desc = "Panel: Database" })
 map("n", "<leader>6", wb.runner, { desc = "Panel: Run" })
@@ -37,9 +37,10 @@ map("n", "<leader>j", function() require("runner").pick() end, { desc = "Run: pi
 map({ "n", "i", "v" }, "<D-s>", "<cmd>w<cr><esc>", { desc = "Save" })
 map(nt, "<D-f>", function() Snacks.picker.files() end, { desc = "Find file" })
 map(nt, "<D-e>", function() Snacks.picker.recent() end, { desc = "Recent files" })
+map(nt, "<D-k>", function() require("shortcuts").open() end, { desc = "Search shortcuts" })
 map(nt, "<D-F>", function() Snacks.picker.grep() end, { desc = "Grep in project" })
 map(nt, "<D-E>", wb.files, { desc = "Panel: Files" })
-map("n", "<D-w>", function() Snacks.bufdelete() end, { desc = "Close buffer" })
+map("n", "<D-w>", wb.close_tab, { desc = "Close buffer" })
 map("n", "<D-/>", "gcc", { remap = true, desc = "Toggle comment" })
 map("v", "<D-/>", "gc", { remap = true, desc = "Toggle comment" })
 map("t", "<C-q>", "<C-\\><C-n>", { desc = "Terminal: normal mode" })
@@ -98,6 +99,20 @@ for _, lhs in ipairs({ "<S-D-Right>", "<M-D-Right>" }) do
 end
 -- Cmd+P: editör tab'ını pinle / pin'i kaldır (panelden basılırsa son kod penceresindeki tab)
 map(nt, "<D-p>", wb.toggle_pin, { desc = "Pin / unpin editor tab" })
+-- Cmd+N: Files panelinde yeni dosya (neo-tree eşlemesi, plugins/workbench.lua); başka yerde yeni LESS penceresi
+-- (Ghostty'nin Cmd+N'i Neovim'e verildiği için new_window AppleScript ile istenir)
+map(nt, "<D-n>", function()
+  local app = vim.env.LESS_APP == "1" and "LESS" or "Ghostty"
+  local script = ('tell application "%s" to perform action "new_window" on focused terminal of selected tab of front window')
+    :format(app)
+  vim.system({ "osascript", "-e", script }, { text = true }, function(res)
+    if res.code ~= 0 then
+      vim.schedule(function()
+        vim.notify("Could not open a new window: " .. vim.trim(res.stderr or ""), vim.log.levels.WARN)
+      end)
+    end
+  end)
+end, { desc = "New window" })
 -- Cmd+T: Claude panelinde yeni Claude oturumu, Terminal panelinde yeni shell sekmesi, başka yerde yeni boş buffer
 map(nt, "<D-t>", termtabs.new_tab, { desc = "New tab (Claude / terminal / buffer)" })
 

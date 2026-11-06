@@ -11,12 +11,9 @@ vim.opt.mousescroll = "ver:3,hor:6"
 vim.opt.clipboard = "unnamedplus"
 vim.opt.splitright = true
 vim.opt.splitbelow = true
-vim.opt.relativenumber = false
+vim.opt.relativenumber = true -- imleç satırı mutlak, diğerleri uzaklık (10j)
 vim.opt.scrolloff = 6
 vim.opt.whichwrap:append("<,>,[,]")
-
-vim.g.db_ui_win_position = "left"
-vim.g.db_ui_winwidth = 40
 
 vim.env.PATH = "/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/libpq/bin:" .. vim.env.PATH
 

@@ -101,7 +101,8 @@ function M.open(path, open, keep)
 end
 
 --- neo-tree eşlemesi (Enter, çift tık, tek tık). Dosyada `M.open`, klasörde neo-tree'nin `open`'ı.
---- `click` (tek tık): odak ağaçta kalır, klasörde ve tıklama ağaç penceresinde değilse bir şey yapmaz.
+--- Dosya önizleme olarak yeni açılıyorsa odak ağaçta kalır; tekrar Enter önizlemeyi normal tab'a çevirip odağı ona taşır.
+--- `click` (tek tık): odak her zaman ağaçta kalır, klasörde ve tıklama ağaç penceresinde değilse bir şey yapmaz.
 ---@param state table neo-tree state
 ---@param click? boolean
 function M.neotree(state, click)
@@ -116,10 +117,13 @@ function M.neotree(state, click)
     end
     return
   end
-  M.open(node.path or node:get_id(), function()
+  local path = node.path or node:get_id()
+  local buf = find(path)
+  local stay = click or not (buf and vim.bo[buf].buflisted)
+  M.open(path, function()
     state.commands.open(state)
   end, click)
-  if click and vim.api.nvim_win_is_valid(win) then
+  if stay and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_set_current_win(win)
   end
 end

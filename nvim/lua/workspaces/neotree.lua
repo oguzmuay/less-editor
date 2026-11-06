@@ -38,6 +38,59 @@ function M.on_git_status_changed(args)
   end
 end
 
+--- Repo kökünün o anki dalı (`.git/HEAD`'den; worktree'de `.git` dosyasındaki `gitdir`), ayrık HEAD'de kısa sha.
+---@param root string
+---@return string?
+local function head(root)
+  local function first_line(path)
+    local fd = io.open(path, "r")
+    local line = fd and fd:read("*l")
+    if fd then
+      fd:close()
+    end
+    return line
+  end
+  local git = root .. "/.git"
+  local stat = vim.uv.fs_stat(git)
+  if not stat then
+    return nil
+  end
+  if stat.type == "file" then
+    local dir = (first_line(git) or ""):match("^gitdir:%s*(.-)%s*$")
+    if not dir then
+      return nil
+    end
+    git = dir:sub(1, 1) == "/" and dir or (root .. "/" .. dir)
+  end
+  local ref = first_line(git .. "/HEAD")
+  return ref and (ref:match("^ref: refs/heads/(.+)$") or ref:sub(1, 7)) or nil
+end
+
+--- Ağaç düğümü açık workspace'in bir kök klasörüyse (symlink klasörünün doğrudan çocuğu) git dalı; değilse nil.
+---@param node table neo-tree düğümü
+---@return string?
+function M.branch(node)
+  if node.type ~= "directory" then
+    return nil
+  end
+  local cur = ws().current()
+  if not cur or vim.fs.dirname(node.path) ~= ws().link_dir(cur) then
+    return nil
+  end
+  return head(ws().to_real(node.path))
+end
+
+--- neo-tree `name` bileşeni: workspace köklerinin adının yanına dalı (` main`) ekler.
+---@return table
+function M.name_component(config, node, state)
+  local name = require("neo-tree.sources.common.components").name(config, node, state)
+  local branch = M.branch(node)
+  if not branch then
+    return name
+  end
+  return { name, { text = "  " .. vim.fn.nr2char(0xe725) .. " " .. branch, highlight = "Comment" } }
+end
+
 --- Yamaları bir kez kurar (neo-tree'nin `setup`'ından önce, eklenti spec'inin `opts` aşamasında çağrılır):
 --- - `get_path_to_reveal`: geçerli dosyanın gerçek yolunu ağaçtaki symlink yoluna çevirir (Cmd+1 reveal, follow).
 --- - `git.status_async`: workspace klasörü için çağrılınca her kökün kendi reposunda çalışır.

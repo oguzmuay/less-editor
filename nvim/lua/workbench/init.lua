@@ -17,7 +17,7 @@ local function is_code_win(win)
     return false
   end
   local buf = vim.api.nvim_win_get_buf(win)
-  return vim.bo[buf].buftype == "" and vim.bo[buf].filetype ~= "neo-tree"
+  return vim.bo[buf].buftype == "" and vim.bo[buf].filetype ~= "neo-tree" and not vim.w[win].workbench_bottom
 end
 
 --- Mevcut sekmede, verilen koşulu sağlayan ilk pencereyi döndürür.
@@ -112,6 +112,12 @@ function M.setup()
       vim.cmd.startinsert()
     end,
   })
+  vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
+    group = group,
+    callback = function(ev)
+      M.lock_empty(ev.buf)
+    end,
+  })
   vim.api.nvim_create_autocmd("SessionLoadPost", {
     group = group,
     callback = function()
@@ -121,11 +127,31 @@ function M.setup()
   vim.schedule(M.restore_pins)
 end
 
---- Cmd+1: Dosya gezgini (neo-tree).
+--- Son tab kapanınca kalan boş, isimsiz buffer'ı salt okunur yapar (yanlışlıkla yazılıp "kaydedilmedi" uyarısı
+--- çıkmasın). Cmd+T'nin açtığı boş buffer (`b:workbench_scratch`) hariç. Bu buffer'a dosya açılınca Vim onu yeniden
+--- kullanır ve `modifiable` sıfırlanır.
+---@param buf integer
+function M.lock_empty(buf)
+  if vim.b[buf].workbench_scratch or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local bo = vim.bo[buf]
+  if bo.buftype == "" and bo.modifiable and not bo.modified and vim.api.nvim_buf_get_name(buf) == ""
+    and vim.api.nvim_buf_line_count(buf) == 1 and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "" then
+    bo.modifiable = false
+  end
+end
+
+--- Cmd+1: Dosya gezgini (neo-tree). Git paneliyle aynı yuvayı paylaşır: açılırken Git panelini kapatır.
 function M.files()
   panel(function()
     return find_ft("neo-tree")
   end, function()
+    local git = require("gitstatus")
+    local gw = git.find_panel()
+    if gw then
+      git.close_panel(gw)
+    end
     vim.cmd("Neotree focus reveal")
     M.arrange_layout()
   end, function()
@@ -260,10 +286,26 @@ local function hide_claude()
   require("termtabs").hide("claude")
 end
 
+--- Database paneli açıksa penceresini döndürür (modül hiç yüklenmediyse yüklemez).
+---@return integer?
+local function db_win()
+  return package.loaded.datasource and package.loaded.datasource.find_panel()
+end
+
+--- Claude ya da terminal açılırken sağ sütundaki Database panelini kapatır; kapanınca eski paneller geri gelmez.
+local function drop_db()
+  local win = db_win()
+  if win then
+    state.db_hidden = nil
+    require("datasource").close_panel(win)
+  end
+end
+
 --- Cmd+3: Sağdaki Claude Code paneli (oturum sekmeleriyle).
 --- claudecode tembel yüklendiği için önce modülü yükleyip (setup + IDE sunucusu) sonra komutu çağırır.
 function M.claude()
   panel(claude_win, function()
+    drop_db()
     pcall(require, "claudecode")
     vim.cmd("ClaudeCodeFocus")
   end, hide_claude)
@@ -278,6 +320,7 @@ end
 --- Terminal panelini sağa açar (seçili sekmeyle); hiç terminal yoksa yeni bir shell sekmesi başlatır.
 --- Yerleşimi `arrange_right_column` düzeltir (Claude varsa onun altına).
 local function open_shell()
+  drop_db()
   local tt = require("termtabs")
   if not tt.show("shell", true) then
     tt.new_shell(true)
@@ -469,7 +512,7 @@ function M.arrange_layout()
   end
   local right = vim.tbl_filter(function(w)
     return w ~= nil
-  end, { claude_win(), shell_win() })
+  end, { claude_win(), shell_win(), db_win() })
   local strip = M.bottom_wins()
   if layout_ok(right, strip) then
     remember_sizes(right, strip)
@@ -575,9 +618,13 @@ end
 --- sol panellerin altına uzanırdı. Kod penceresi yoksa pencere sıradan ana alan penceresine döner.
 ---@param buf integer
 function M.guard_strip(buf)
+  -- dadbod sorgu sonucu (`pedit`, b:db_input'u BufReadPost'ta alır) de şeride gider
+  local strip_tool = vim.bo[buf].filetype == "noice" or vim.b[buf].db_input ~= nil
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_get_config(win).relative == "" then
-      if vim.bo[buf].filetype == "noice" and not vim.w[win].workbench_bottom then
+      if strip_tool and vim.w[win].workbench_bottom then
+        vim.b[buf].workbench_bottom = true
+      elseif strip_tool then
         M.mark_bottom(win)
         vim.wo[win].winfixwidth = false
         local focused = vim.tbl_contains(M.bottom_wins(), state.focus == win and state.prev_focus or state.focus)
@@ -610,15 +657,41 @@ function M.guard_strip(buf)
   end
 end
 
---- Cmd+5: Veritabanı paneli (vim-dadbod-ui).
+--- Database panelini sağ sütunda açar: görünen Claude/terminal gizlenir (genişlikleri devralınır) ve panel hangi
+--- yolla kapanırsa kapansın (`WinClosed`) geri gösterilir. Panel açıkken Claude/terminal açılırsa geri yükleme iptal.
+local function open_db()
+  local tt = require("termtabs")
+  local hidden, width = {}, nil
+  for _, group in ipairs({ "claude", "shell" }) do
+    local w = tt.win(group)
+    if w then
+      width = width or vim.api.nvim_win_get_width(w)
+      table.insert(hidden, group)
+      tt.hide(group)
+    end
+  end
+  state.db_hidden = hidden
+  local win = require("datasource").open_panel(width or math.floor(vim.o.columns * 0.38))
+  M.arrange_layout()
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function()
+      local restore = state.db_hidden or {}
+      state.db_hidden = nil
+      vim.schedule(function()
+        for _, group in ipairs(restore) do
+          tt.show(group)
+        end
+      end)
+    end,
+  })
+end
+
+--- Cmd+5: Database paneli (lua/datasource), sağ sütunda Claude/terminal'in yerine.
 function M.db()
-  panel(function()
-    return find_ft("dbui")
-  end, function()
-    vim.cmd("DBUI")
-    M.arrange_layout()
-  end, function()
-    vim.cmd("DBUIClose")
+  panel(db_win, open_db, function(win)
+    require("datasource").close_panel(win)
   end)
 end
 
@@ -649,6 +722,7 @@ end
 function M.git()
   local git = require("gitstatus")
   panel(git.find_panel, function()
+    vim.cmd("Neotree close") -- Files ile aynı yuva
     git.open_panel()
     M.arrange_layout()
   end, git.close_panel)
@@ -708,7 +782,7 @@ function M.toggle(name)
     files = { find = function() return find_ft("neo-tree") end, close = function() vim.cmd("Neotree close") end },
     claude = { find = claude_win, close = hide_claude },
     shell = { find = shell_win, close = vim.api.nvim_win_hide },
-    db = { find = function() return find_ft("dbui") end, close = function() vim.cmd("DBUIClose") end },
+    db = { find = db_win, close = function(w) require("datasource").close_panel(w) end },
     runner = { find = function() return require("runner").find_panel() end, close = function(w) require("runner").close_panel(w) end },
     git_history = { find = function() return require("githistory").find_panel() end, close = function(w) require("githistory").close_panel(w) end },
     git = { find = function() return require("gitstatus").find_panel() end, close = function(w) require("gitstatus").close_panel(w) end },
@@ -737,9 +811,9 @@ function M.reset_ui()
   state.sizes = nil
   local right = vim.tbl_filter(function(w)
     return w ~= nil
-  end, { claude_win(), shell_win() })
+  end, { claude_win(), shell_win(), db_win() })
   local strip = M.bottom_wins()
-  local panels = { ["neo-tree"] = 34, dbui = vim.g.db_ui_winwidth or 40, gitstatus = 40 }
+  local panels = { ["neo-tree"] = 34, gitstatus = 40 }
   vim.cmd("noautocmd wincmd =")
   if #right > 0 then
     api.nvim_win_set_width(right[1], math.floor(vim.o.columns * 0.38))
@@ -780,6 +854,26 @@ local function keep_code(win)
   return not vim.iter(vim.api.nvim_tabpage_list_wins(0)):any(function(w)
     return w ~= win and code(w)
   end)
+end
+
+--- Cmd+W: tab'ı (buffer) kapatır. Boş, isimsiz bir kod penceresinde başka kod penceresi de varsa tab yerine
+--- pencereyi kapatır (fazladan açılmış boş editör bölmesi Cmd+W ile kapanmıyordu).
+function M.close_tab()
+  local win = vim.api.nvim_get_current_win()
+  local buf = vim.api.nvim_win_get_buf(win)
+  local function code(w)
+    return is_code_win(w) and not vim.wo[w].diff and not vim.w[w].workbench_bottom
+  end
+  local extra = code(win)
+    and vim.api.nvim_buf_get_name(buf) == ""
+    and not vim.bo[buf].modified
+    and vim.iter(vim.api.nvim_tabpage_list_wins(0)):any(function(w)
+      return w ~= win and code(w)
+    end)
+  if extra then
+    return vim.api.nvim_win_close(win, false)
+  end
+  Snacks.bufdelete()
 end
 
 --- Ex komutunu çalıştırır; hatayı Lua yığın izi olmadan, Vim'in kendi mesajıyla gösterir.

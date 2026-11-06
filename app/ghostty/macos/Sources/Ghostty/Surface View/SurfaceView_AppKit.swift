@@ -295,7 +295,7 @@ extension Ghostty {
             // Set a timer to show the ghost emoji after 500ms if no title is set
             titleFallbackTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
                 if let self = self, self.title.isEmpty {
-                    self.title = "👻"
+                    self.title = "LESS"
                 }
             }
 

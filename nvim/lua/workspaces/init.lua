@@ -234,6 +234,13 @@ function M.roots()
   end, ws.roots)
 end
 
+--- Klasör bir workspace'in symlink klasörü mü (persistence oturum listesinde workspace'leri ayırmak için).
+---@param dir string
+---@return boolean
+function M.is_link_dir(dir)
+  return vim.fs.dirname(dir) == links_root()
+end
+
 --- Arama/tarama yapılacak klasörler: workspace açıksa kökleri, değilse çalışma klasörü.
 ---@return string[]
 function M.dirs()

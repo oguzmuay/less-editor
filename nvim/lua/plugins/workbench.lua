@@ -22,10 +22,11 @@ return {
       window = {
         width = 34,
         mappings = {
-          -- Enter / tek tık: önizleme tab'ı; aynı dosyada tekrar Enter / çift tık: normal tab (lua/previewtab)
+          -- Enter / tek tık: önizleme tab'ı (odak Files'ta kalır); aynı dosyada tekrar Enter / çift tık: normal tab (lua/previewtab)
           ["<cr>"] = function(state) require("previewtab").neotree(state) end,
           ["<2-LeftMouse>"] = function(state) require("previewtab").neotree(state) end,
           ["<LeftRelease>"] = function(state) require("previewtab").neotree(state, true) end,
+          ["<D-n>"] = "add", -- Cmd+N: imleçteki klasörde (dosyadaysa onun klasöründe) yeni dosya
           ["<Right>"] = "open",
           ["<Left>"] = "close_node",
         },
@@ -42,10 +43,8 @@ return {
     },
   },
 
-  {
-    "kristijanhusak/vim-dadbod-ui",
-    cmd = { "DBUIClose" },
-  },
+  -- Database paneli kendi modülümüz (lua/datasource); dadbod-ui kullanılmıyor
+  { "kristijanhusak/vim-dadbod-ui", enabled = false },
 
   {
     "akinsho/bufferline.nvim",
@@ -54,7 +53,6 @@ return {
         hover = { enabled = true, delay = 150, reveal = { "close" } },
         offsets = {
           { filetype = "neo-tree", text = "Files", highlight = "Directory", text_align = "left" },
-          { filetype = "dbui", text = "Database", highlight = "Directory", text_align = "left" },
           { filetype = "gitstatus", text = "Git", highlight = "Directory", text_align = "left" },
         },
       },

@@ -22,8 +22,13 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 on run {wd, f}
   tell application id "com.oguz-dev.less-editor"
     set cfg to {}
-    if wd is not "" then set cfg to cfg & {initial working directory:wd}
-    if f is not "" then set cfg to cfg & {environment variables:{"LESS_OPEN=" & f}}
+    set envs to {}
+    if wd is not "" then
+      set cfg to cfg & {initial working directory:wd}
+      set end of envs to "LESS_OPEN_DIR=" & wd
+    end if
+    if f is not "" then set end of envs to "LESS_OPEN=" & f
+    if envs is not {} then set cfg to cfg & {environment variables:envs}
     new window with configuration cfg
     activate
   end tell

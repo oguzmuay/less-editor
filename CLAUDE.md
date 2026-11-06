@@ -25,13 +25,19 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
                               jdwp.gradle (Gradle bootRun'a JDWP ekleyen init script)
   lua/runner/dap.lua          nvim-dap köprüsü: boş port, runnerId etiketli oturumlar, wait(), detach
   lua/githistory/init.lua     Git History paneli (alt şerit, özel modül); repos() gitstatus tarafından da kullanılır
+  lua/githistory/graph.lua    commit grafiği: layout(commits) → parent'lardan şerit hücreleri (╭╮╰╯, renk no)
   lua/gitstatus/init.lua      Git paneli (sol): commit edilmemiş dosyalar, stage/unstage/discard
   lua/gitdiff/init.lua        diff'i kod editöründe tab olarak açar: open({ path?, rev?, staged?, cwd? })
   lua/gitblame/init.lua       :GitBlame sütunu + tanım satırı sonunda yazar lens'i (özel modül)
   lua/termtabs/init.lua       Claude + Terminal panellerinde tablar: gruplar, winbar tab çubuğu, geçiş, rename, komutlar
   lua/termtabs/claude.lua     claudecode.nvim özel terminal sağlayıcısı, new_session(), at_mentioned yönlendirmesi
   lua/termtabs/sessions.lua   ~/.claude/sessions/<pid>.json + transcript JSONL okuyucu (artımlı)
-  lua/termtabs/summary.lua    Claude özet tab'ı
+  lua/termtabs/summary.lua    Claude özet tab'ı (oturum başına renkli, token kazan animasyonlu Claude maskotu)
+  lua/termtabs/agents.lua     AI türleri (claude/codex/gemini/ollama), Cmd+T seçici, varsayılan AI, `.less/ai` posta kutusu + bildirim
+  lua/lessmcp/init.lua        LESS MCP: araç kaydı, call/poll, onay penceresi (approve), AI'lara bağlama (connect)
+  lua/lessmcp/server.lua      stdio MCP sunucusu (`nvim --headless --clean -l`), çağrıları $NVIM soketinden editöre iletir
+  lua/lessmcp/tools/          araçlar: editor.lua, git.lua, run.lua, db.lua (okuma sorgusu sınıflandırıcı + salt okunur oturum)
+  lua/termtabs/accounts.lua   Claude hesapları (`:Claude account`): hesap başına CLAUDE_CONFIG_DIR, IDE kilidi symlink'i
   lua/workspaces/init.lua     Workspaces (çoklu kök): kayıt, symlink klasörü, aç/kapat, oturum, :Workspace
   lua/workspaces/neotree.lua  neo-tree yamaları (reveal, çoklu repo git durumu)
   lua/workspaces/ui.lua       workspace seçici ve yönetim menüleri
@@ -40,14 +46,23 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/plugins/autorestore.lua autorestore setup (virtual lazy plugin), `Space q h` dashboard, NVIM_SESSIONS_DIR override
   lua/plugins/scrollbar.lua   nvim-scrollview (sağ kenar işaretleri) + `problems` virtual plugin
   lua/problems/init.lua       kod penceresi winbar'ında problem sayacı + ↑↓, jump(), is_code_window()
-  lua/plugins/dashboard.lua   LESS açılış ekranı (başlık, slogan, girişlerin tek kaynağı; `w` buradan)
+  lua/problems/hover.lua      hata/uyarı tooltip'i: CursorHold ve fare bekleyişinde satırın diagnostikleri, tam metin;
+                              farede kelime üstündeyse LSP hover (Javadoc) da
+  lua/plugins/dashboard.lua   LESS açılış ekranı (başlık, slogan, girişlerin tek kaynağı; `p`/`o`/`w` buradan)
+  lua/datasource/init.lua     Database paneli (sağ sütun): bağlantı kaydı, ağaç, konsol / veri / yapı tab'ları
+  lua/datasource/types.lua    veri kaynağı türleri: ikon, istemci, tablo listeleme / veri / yapı komutları
+  lua/datasource/form.lua     tek pencerede çok alanlı form (bağlantı ekle/düzenle)
+  lua/plugins/datasource.lua  datasource setup (virtual lazy plugin, vim-dadbod bağımlılığı)
   lua/firstrun/init.lua       LESS ilk açılış ekranı: eklenti ilerlemesi, Mason/LSP kurulum bildirimi
   lua/previewtab/init.lua     VS Code tarzı önizleme tab'ı: open(path, open_fn, keep), get(), promote(buf), neotree()
   lua/plugins/previewtab.lua  previewtab setup (virtual plugin; bufferline opts'ta yamaları kurar)
+  lua/plugins/markdown.lua    render-markdown: tooltip (nofile) başlıklarında seviye simgesi
   lua/plugins/image.lua       snacks.image: görsel dosyaları/markdown görselleri (kitty graphics), Ghostty yedek tespiti
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
   lua/plugins/font.lua        font setup (virtual lazy plugin)
-  KISAYOLLAR.md               kullanıcıya yönelik kısayol özeti
+  lua/plugins/cursortrail.lua imleç izi (smear-cursor.nvim), `:CursorTrail`, `Space u t`, kalıcı seçim
+  KISAYOLLAR.md               kullanıcıya yönelik kısayol özeti (Cmd+K arama penceresinin de kaynağı)
+  lua/shortcuts/init.lua      Cmd+K / :Shortcuts: KISAYOLLAR.md tablolarını Snacks picker'da arar (Türkçe harf katlamalı)
   lazy-lock.json              eklenti sürümleri (commit'le)
 ghostty/config.ghostty        Ghostty config (~/.config/ghostty/config.ghostty -> buraya symlink)
 Brewfile, install.sh          yeni makinede kurulum
@@ -223,6 +238,30 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   panel görünmüyorsa yenilemez. Diff: `gitdiff.open({ path, staged = <Staged bölümü>, cwd = repo })`, modül yoksa dosya.
   Discard yalnız tek dosya (Changes/Untracked), ilk seçenek "Cancel"; staged/conflict'te "önce unstage" uyarısı.
   Pencere oturuma girmez. problems `excluded_filetypes` + bufferline offset ("Git") eklendi.
+- **Database paneli (`lua/datasource`):** filetype `datasource`, sağ sütunda (`arrange_layout` sağ sütun listesi
+  `{ claude, shell, db }`). `workbench.open_db` görünen Claude/terminal'i gizleyip genişliğini devralır,
+  `state.db_hidden`'a yazar; panel penceresinin `WinClosed`'unda geri gösterir; `drop_db` (Claude/terminal açılırken)
+  geri yüklemeyi iptal edip paneli kapatır.
+  - Kayıt: `stdpath("data")/datasource/connections.json` → `{version=1, connections=[{name,type,host,port,user,password,
+    database,options,file?,url?}]}` (0600; testte `NVIM_DATASOURCE_FILE`). Yoksa `dadbod_ui/connections.json` bir kez
+    içe aktarılır. `vim.g.dbs` girdileri `project = true` ile listelenir, düzenlenmez. URL `db#url#format` ile kurulur.
+  - Komutlar dadbod adaptörlerinin argv'si (`db#adapter#dispatch(url, "interactive"|"filter"|"command")`) + türe özgü
+    bayraklar (`types.lua`), `vim.system` ile asenkron (20 sn zaman aşımı). Parola dadbod'daki gibi argv'de/URL'de.
+  - İstemci yoksa (`types.check_client`) `with_client` Install/Cancel sorar, `brew install <t.brew>` arka planda;
+    aynı tür için bekleyen istekler kuyruğa girer (tek soru), iptal/hata panelde hata satırı. Homebrew yoksa yalnız uyarı.
+  - Konsol: `<veri>/datasource/consoles/<ad>.<sql|redis|js>`, `BufReadPost` ile `b:db` + Cmd+Enter/`Space D`
+    (normal: boş satırla ayrılan blok, görsel: `getregion` seçimi). Çalıştırma dadbod `:DB` değil: `types.query_cmd`
+    (psql `--csv -q`, mysql `-B`, sqlite `-csv -header -bail`, sqlcmd stdin + `GO`, mongosh `eval` + EJSON, redis stdin)
+    → bağlantı başına tek sonuç buffer'ı (`datasource://<ad> (result)`, nofile, listelenmez) alt şeritte tablo; sonuç
+    kümesi yoksa "Statement executed", hata kırmızı. Zaman aşımı 5 dk. Elle `:DB` yine çalışır: sonucu (`pedit`,
+    `b:db_input`) `guard_strip` şeride alır; `is_code_win` şerit pencerelerini (`w:workbench_bottom`) saymaz.
+  - Veri/yapı tab'ları `datasource://<bağlantı>/<öğe>` (gitdiff gibi `buftype=""`, `PersistenceSavePre`'de silinir),
+    filetype `dsdata` (problems `excluded_filetypes`'ta). Redis veri: önce `TYPE`, sonra türe göre komut.
+  - Veri tab'ı tablo görünümü (`datasource/grid.lua`): `types.data_cmd` ham çıktı + biçim döndürür (psql `--csv`,
+    sqlite `-csv -header`, mysql `-B` TSV + kaçışlar, sqlcmd `-s <tab>` + `----` satırı, mongo `EJSON.stringify`, redis
+    türe göre kolonlar). Tırnaksız boş CSV alanı / `NULL` hücresi = NULL. Kolon en fazla 40 görüntü sütunu (`…`),
+    sayısal kolon sağa yaslı. Sabit başlık winbar'da (problems `CUSTOM_WINBARS` ile kod penceresinin winbar'ı
+    filetype'a göre değişir), `leftcol` ve `textoff` ile hizalı, `WinScrolled`'da `redrawstatus!`. `wrap` buffer-yerel kapalı.
 - **Ortak sağ tık (`workbench.on_right_click(name, handler)`):** panellerin global `<RightMouse>` expr eşlemesi tek
   yerde; Run ve Git paneli buraya kaydolur (eskiden ilk kuran kazanıyordu). Yeni panel sağ tıkı da bunu kullanmalı.
 - **Font (`lua/font`):** Font Ghostty'de çizilir. `config.ghostty` sonunda `config-file = ?~/.config/ghostty/font.ghostty`
@@ -361,6 +400,11 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   - Tıklama işleyicileri global `ProblemsNext/Prev/NextError/...`, `minwid` = pencere id'si.
   - `jump(win, count, severity?)` — `win` 0 kabul etmez, gerçek pencere id'si ver.
   - ✖/⚠ sayısı kendi önem derecesine gider; "önce en yüksek önem" kuralı yalnız ↑/↓ oklarında.
+  - Tooltip (`problems.hover`): `CursorHold` (normal mod, kod penceresi) imlecin altında; fare `vim.on_key` ile
+    dinlenir (`<MouseMove>` eşlenmez, bufferline'ın global eşlemesi kalır), aynı satırda 350 ms durunca
+    `relative = "mouse"`. Odak alınamayan float (`focusable = false`), en fazla 80 sütun, sarmalı. Başka odaklanabilir
+    float (LSP hover, picker) ya da pum açıkken açılmaz; scrollview / smear-cursor float'ları odaklanamaz, engel değil.
+    Kapatma `vim.g.diagnostic_hover = false`.
 - **Testlerde gerçek kullanıcı kayıtlarına yazma:** `NVIM_AUTORESTORE_FILE`, `NVIM_WORKSPACES_FILE`/`_DIR`,
   persistence oturum klasörü — test sonrası temizle. (Bir test gerçek `autorestore.json`'u ezmişti.)
 - **Tarih biçimi:** arayüzde ISO `%Y-%m-%d` (GitBlame sütunu ve Git geçmişi paneli tutarlı).
@@ -403,7 +447,7 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 12 | **Cmd+Sol/Sağ** satır başı/sonu (Sol: önce ilk dolu karakter, tekrar basınca sütun 1), **Cmd+Yukarı/Aşağı** dosya başı/sonu, **Option+Sol/Sağ** kelime atlama | Terminalde Cmd+Sol/Sağ shell'e Ctrl+A/Ctrl+E olarak iletilir. |
 | 13 | Mouse: Ctrl/Option+tık tanıma git; sağ tık menüsünde References, Rename, Code Action, Claude'a gönder | macOS Ctrl+tık'ı sağ tık yapabilir, Option+tık yedek. |
 | 14 | **Monorepo** (BE + FE farklı modüllerde) kökten açılır | jdtls kökü özel `java_root()`; TS kökü lock dosyasından; Spring/Git panelleri cwd'den. FE'de lock dosyası olmalı. |
-| 15 | DB arayüzü **vim-dadbod-ui** (solda) | `mysql-client` keg-only olduğu için Neovim PATH'ine eklendi. Proje bazlı bağlantılar `.lazy.lua` içinde `vim.g.dbs` (gitignore). |
+| 15 | DB arayüzü ~~vim-dadbod-ui (solda)~~ → #45 özel Database paneli | `mysql-client` keg-only olduğu için Neovim PATH'ine eklendi. Proje bazlı bağlantılar `.lazy.lua` içinde `vim.g.dbs` (gitignore). |
 | 16 | **Run paneli** (eski Spring paneli genelleştirildi) | Ağaç: Spring Boot grubu + Node.js grubu → paket → script'ler. **Space ile grup/paket kapanır-açılır** (altı gizlenir). Spring: `@SpringBootApplication` taraması, `mvnw`/`gradlew` öncelikli, profil, `Started ... in` ve port yakalama. Node: tüm `package.json`'lar (node_modules hariç), script sırası dosyadaki gibi, paket yöneticisi lock dosyasından (npm/pnpm/yarn/bun). Nerd Font ikonları. Başlatınca log otomatik açılır. |
 | 17 | **Git History paneli özel modül; diff'ler kod editöründe tab** (diffview.nvim kaldırıldı) | Enter/çift tık commit diff'i kod editöründe bufferline tab'ı olarak açar, paneller yerinde kalır (eskiden tam ekran sekme); `f` dosya geçmişi, `a` tüm dallar; `.git/logs/HEAD` izlenip otomatik yenilenir. |
 | 18 | Yapılandırma bu repoda, `~/.config` altına symlink | Yedek ve yeni makine kurulumu için. |
@@ -423,7 +467,7 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 32 | **Argümansız `nvim` son projeyi/workspace'i açar**; proje içinde başlatılırsa o proje (kökü) açılır | Kendi "son" kaydımız; git commit editörü, `nvim dosya`, headless ve test açılışları kaydı ezmez. Dashboard: `nvim +Dashboard`, `NVIM_NO_RESTORE=1` ya da açıkken `Space q h` / `:Dashboard` (yüzen). Kapatma `vim.g.autorestore = false`. |
 | 33 | **Her proje/workspace açılışında Files + editör + Claude + terminal açık gelir** | `vim.g.default_layout` ile seçilebilir/kapatılabilir. Kapatılan Claude/terminal sonraki proje açılışında yeniden açılır. Workspace değiştirince Claude yeniden başlamaz (konuşma kaybolmasın); yeni projede Claude için Cmd+T. |
 | 34 | **Run panelinde her öğe için Run / Stop / Debug / Rerun** (klavye, satır sonu butonları, sağ tık menüsü, `Space j`) | Spring (Maven/Gradle, jdtls ile attach) ve Node (npm/pnpm/yarn, alt süreçler dahil otomatik attach). Debug portu yalnız 127.0.0.1. Uygulama debugger'ı beklemez (`suspend=n`); jdtls hazır olunca bağlanır. |
-| 35 | **Sol Git paneli (Cmd+0, `:Git`)**: sadece commit edilmemiş dosyalar, stage / unstage / discard; alt paneldeki geçmiş **Git History** (Cmd+7, `:GitHistory`) | Özel modül (neo-tree git_status gruplamıyor, çoklu repo yok, Files penceresini paylaşırdı). Files/DB ile yan yana durur, en solda. Discard her zaman onay ister. Commit atma yok (istenmedi). |
+| 35 | **Sol Git paneli (Cmd+0, `:Git`)**: sadece commit edilmemiş dosyalar, stage / unstage / discard; alt paneldeki geçmiş **Git History** (Cmd+7, `:GitHistory`) | Özel modül (neo-tree git_status gruplamıyor, çoklu repo yok, Files penceresini paylaşırdı). Files ile aynı yerde: biri açılınca diğeri kapanır (yan yanayken neo-tree dosyayı yanlış pencereye açıyordu); DB ile yan yana, en solda. Discard her zaman onay ister. Commit atma yok (istenmedi). |
 | 36 | **`:Font` ile font geçişi**, varsayılan JetBrains Mono | Seçenekler: JetBrains Mono, Geist Mono, Berkeley Mono (ücretli, kullanıcı kurarsa), Cascadia Code, Fira Code, Maple Mono, IBM Plex Mono, Monaspace Neon/Argon/Xenon/Radon/Krypton. Ücretsizler Brewfile'da cask olarak. Seçim kalıcı, Ghostty otomatik yeniden yüklenir. |
 | 37 | **Ürün adı LESS** ("LESS editor"): sade editör, IDEA gibi kalabalık değil. Ghostty fork'u bu repoda (`app/`), `LESS.app`, `com.oguz-dev.less-editor`, CLI `lessed` | Faz 1 = yeniden markalanmış Ghostty + gömülü Neovim config'i. Fork ayrı repo değil, subtree (upstream güncellemesi kolay). |
 | 38 | **Önizleme tab'ı** (VS Code gibi): Files/Git panelinde Enter / tek tık önizleme (italik, tek tane, yerine yenisi açılır); tekrar Enter / çift tık, düzenleme, kaydetme, pin → normal tab | Picker ve `gd` ile açılanlar doğrudan normal tab. |
@@ -432,6 +476,32 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 41 | **Ortadaki kod penceresi `:q` vb. ile kapanmaz** | Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q / `Space q q`. `nvim dosya` ve git commit editöründe koruma kapalı. |
 | 42 | **`:UIReset`** panel boyutlarını varsayılana döndürür | AI sütunu kodu kapatacak kadar genişlediğinde. Tuş **Cmd+Shift+0** (`csi:48;10u` → `<S-D-0>`; klavye düzeninden bağımsız, TR'de Shift+0 `=` olurdu). |
 | 43 | **Lisans: MIT** (kök `LICENSE`), Ghostty ile aynı | Kullanıcı: Ghostty'den daha serbest bir şey seçilmemeli; MIT zaten aynı. Ghostty'nin MIT metni `app/ghostty/LICENSE` ve pakette `GHOSTTY-LICENSE` olarak korunur. |
+| 45 | **Database paneli özel modül (`lua/datasource`), sağ sütunda Claude/terminal yerine** | Kapanınca (hangi yolla olursa olsun) önceden açık Claude/terminal geri gelir; Database açıkken Claude/terminal açılırsa Database kapanır, geri yükleme olmaz. dadbod-ui kapatıldı (`enabled = false`), sorgular vim-dadbod. |
+| 46 | **Bağlantı formu: tür seç → tek pencerede tüm alanlar** (JDBC URL yerine host/port), `e` ile düzenleme | Türler: PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, Redis, MongoDB (ikonlu). Oracle yok (sqlplus çıktısı ayrıştırılmadı). |
+| 47 | **Bağlantıda Enter/Space/tık → sorgu konsolu tab'ı; tabloda → veri tab'ı; tabloda `e` → yapı düzenleme tab'ı** | Konsollar kalıcı dosya; Cmd+Enter (`super+enter=csi:13;9u`, Ghostty'nin tam ekran kısayolunu ezer) / `Space D` çalıştırır. Space panelde buffer-yerel `nowait`; which-key bu durumda tetikleyici kurmaz. |
+| 48 | **Projeler ve workspace'ler tek listede** (dashboard `p`, `Space f p`), yanında `project`/`workspace` etiketi; **yeni proje (`o` Open Folder) ve yeni workspace (`w`) ayrı girişler** | Projeler persistence oturumlarından (daha önce açılmış klasörler); hiç açılmamış klasör `o` ile açılır. Dashboard ikonları `nr2char` ile (dosyadaki Nerd Font karakterleri kaybolmuştu). |
+| 49 | **Workspace'te Files panelinde her kök klasörün yanında git branch'i** | `.git/HEAD`'den okunur (worktree dahil), neo-tree `name` bileşeni sarılır; ağaç yeniden çizilince güncellenir. |
+| 50 | **Veri tab'ı gerçek tablo görünümü** (çerçeveli, sabit başlık), kod editörü tablarıyla aynı yerde | Hücrede ⏎ tam değer, `y` kopyala. Konsol sonuçları da alt şeritte aynı tablo görünümünde. |
+| 51 | **Cursor trail** (smear-cursor.nvim), aç/kapa: `Space u t`, `:CursorTrail [on\|off]` | Varsayılan açık; seçim `stdpath("state")/cursor_trail`'e yazılır (testte `NVIM_CURSOR_TRAIL_FILE`). LazyVim extra'sı yerine kendi spec'imiz (toggle + kalıcılık). Ghostty shader'ı elendi: aç/kapa config reload ister, terminal panellerini de etkiler. |
+| 52 | **Hata/uyarı tooltip'i**: imleç satırda durunca ya da fare satırın üstünde bekleyince tam mesaj | Satır sonundaki sanal metin kesildiği için. Sanal metin yerinde kaldı. Ghostty'de fare hover'ı gözle denenmedi (testte `getmousepos` taklit edildi). |
+| 53 | **Cmd+N**: Files panelinde imlecin bulunduğu klasörde yeni dosya (neo-tree `add`); başka yerde yeni LESS penceresi | Ghostty `super+n=csi:110;9u` (yeni pencere kısayolu Neovim'e verildi); Files dışında `<D-n>` AppleScript `perform action "new_window"` ile eski davranışı yapar (gerçek pencere açma test edilmedi). |
+| 54 | **Göreli satır numaraları** (`relativenumber`) | İmleç satırında mutlak numara, diğerlerinde uzaklık (`10j`). |
+| 55 | **Files'ta ilk Enter önizleme açar, odak Files'ta kalır**; ikinci Enter normal tab'a çevirip koda geçer | `previewtab.neotree`. Git paneli bu davranışı almadı. |
+| 56 | **Son tab kapanınca kalan boş buffer salt okunur** (`workbench.lock_empty`) | Yanlışlıkla yazılıp "kaydedilmedi" uyarısı çıkmasın. Cmd+T'nin boş buffer'ı (`b:workbench_scratch`) yazılabilir. Dosya açılınca Vim buffer'ı yeniden kullanır, `modifiable` sıfırlanır. `:enew` de kilitli gelir. |
+| 57 | **Cmd+W boş, isimsiz kod penceresinde başka kod penceresi varsa pencereyi kapatır** (`workbench.close_tab`) | Fazladan açılmış boş bölme Cmd+W ile kapanmıyordu. |
+| 58 | **Git History'de VS Code tarzı renkli grafik** (`githistory/graph.lua`): yuvarlak köşeler, şerit başına renk, ● commit / ○ merge; ref'ler HEAD / ⎇ local / ☁ remote / ◆ tag ayrı renkte | git'in `--graph` çıktısı yerine `%p` + `--topo-order` ile kendi şerit hesabımız. Vurgular `GitHistoryLane1..8`, `GitHistoryHead/Local/Remote/Tag` (`default = true`, şema ezebilir). Grafik sütunu listedeki en geniş satıra göre (çok dallı repoda üstte boşluk). Cmd+C/X/A kısayolları denendi, kullanıcı istemedi, geri alındı. |
+| 59 | **Cmd+K / `:Shortcuts`: aranabilir kısayol listesi** | Kaynak `KISAYOLLAR.md` tabloları (tek kaynak; yeni kısayol oraya yazılınca aramada da çıkar). Önizleme dokümanın ilgili satırı, Enter kapatır. Ghostty `super+k=csi:107;9u` (Ghostty'nin "clear screen"ini ezer). |
+| 60 | **Claude özet tab'ında her oturuma kendi renginde Claude maskotu**: çalışırken kazmayla taştan token kazar (◆ sıçrar; önceki zıplama beğenilmedi), idle'da uyur (z Z), onay beklerken "!" yanıp söner | Renk `tab.n`'e göre sabit (ilki Claude turuncusu, 8 renk). Bloğun soluna satır içi sanal metin (`termtabs_summary_mascot` namespace); 400 ms timer yalnız özet görünürken çalışır, yalnız maskotları yeniden çizer. Ghostty'de gözle bakılmadı. |
+| 61 | **Menü çubuğunda File > Open Folder… ve Open Recent**: seçilen proje/workspace yeni LESS penceresinde açılır | `app/ghostty/macos/Sources/App/LESSFileMenu.swift` (+ `AppDelegate` tek satır, `app/PATCHES.md`). Liste Neovim'in `autorestore.add_recent` ile yazdığı `stdpath("state")/recents.json` (en fazla 15, tekrarsız; `autorestore.json` ile aynı koşullarda). Pencere klasörde açılır, projeyi autorestore yükler. Kısayol yok. Liste ilk proje açılışından sonra dolar. |
+| 62 | **Başlık çubuğunda hayalet yok**: yedek başlık `LESS`, başlığın yanında LESS uygulama ikonu | `representedURL` = uygulama paketi (pwd biliniyorsa klasör). macOS başlık ikonunu varsayılan olarak yalnız fare başlık üstündeyken gösterir; her zaman görünmesi için Erişilebilirlik > Ekran > "Pencere başlığı simgelerini göster". |
+| 63 | **Birden çok Claude hesabı**: `:Claude account` ile hesap seç / ekle; yeni oturumlar seçili hesapla açılır, açık oturumlar kendi hesabında kalır | Hesap = `CLAUDE_CONFIG_DIR` (varsayılan `~/.claude`, env yok). Kayıt `stdpath("data")/claude_accounts.json`; kayıt yokken `~/.claude-*` hesap sayılır (`claude-work`). `tab.account`; `sessions.snapshot(pid, dir)` durum/transcript'i hesabın klasöründen okur. claudecode kilidi yalnız `~/.claude/ide`'ye yazdığı için diğer hesabın `ide/`'sine symlink (`link_ide`). Özet tab'ında birden çok hesap varsa `@hesap`. Gerçek `claude-work` oturumuyla uçtan uca denenmedi. |
+| 64 | **Claude paneli → AI paneli** (Cmd+3, `:AI`, `:Claude` de kalır): Claude Code, Codex, Gemini, Ollama aynı panelde sekme; Cmd+T / `+` tür seçici; son seçilen tür varsayılan (boş panelde Cmd+3 ve açılış düzeni onu açar) | İç grup adı hâlâ `"claude"` (refactor riski). `tab.agent`, `tab.ai_name` (`codex-1`). Claude claudecode üzerinden (IDE, hesaplar), diğerleri doğrudan `termtabs.spawn`. Claude dışı durum = terminal `changedtick` değişti mi (2 sn; token/transcript yok). Ollama modeli sorulur, `ai.json`'da hatırlanır. Gerçek codex/gemini/ollama oturumuyla canlı denenmedi (sahte komutla test). |
+| 65 | **AI'lar arası iletişim: ortak klasör** (kullanıcı seçimi; anlık `lessai` komutu yerine) | Proje `.less/ai/` (`.gitignore` = `*`, Codex sandbox'ı cwd dışına yazamadığı için proje içinde): `README.md` protokol + AI listesi, `inbox/<ad>.md`, `shared/`. Her AI `LESS_AI_DIR`/`LESS_AI_NAME` + talimatla başlar: Claude `--append-system-prompt`, Codex `-c developer_instructions=`, Gemini `-i` ilk istem ("ready"), Ollama talimatsız (araç yok). inbox `fs_event` → boştaki AI'a terminalden bildirim (Ollama'ya mesaj metni), AI başına 10 dk'da en fazla 6 (sonsuz ping-pong'a karşı). |
+| 66 | **Açık bir LESS varken yeni pencere dashboard'la başlar** (son projeyi tekrar açmaz); ilk pencere #32'deki gibi son projeyi açar | `autorestore.register_instance()`: `stdpath("state")/instances/<pid>` (yalnız `LESS_APP=1`, ölü kayıtlar silinir). File > Open Recent / Open Folder… ve `lessed <klasör>` `LESS_OPEN_DIR` verir → o klasör yine doğrudan açılır. macOS pencereleri geri yüklerse aynı anda açılanlar dashboard'a düşebilir. |
+| 67 | **LESS MCP sunucusu (`less`): panellerin AI araçları** (editor_*, git_*, run_*, db_*); Claude, Codex, Gemini'ye otomatik bağlanır | Tek sunucu, araçlar editörün içinde panel kodunu kullanır (`lessmcp/tools/`). Sunucu `nvim --headless --clean -l lessmcp/server.lua`, editöre `$NVIM` soketiyle (ek bağımlılık yok); çağrı asenkron, onay beklerken sunucu `poll` eder. Bağlama: Claude `--mcp-config` (argv'nin sonunda, çok değer alır), Codex `-c mcp_servers.less.*` (`tool_timeout_sec=900`), Gemini oturum bayrağı olmadığı ve sistem ayar dosyası root'a ait olmak zorunda olduğu için `~/.gemini/settings.json`'a bir kez `mcpServers.less` (`$NVIM`/`$LESS_AI_NAME` genişletilir; LESS dışında boş araç listesi). Ollama yok. |
+| 68 | **AI'ın tehlikeli işlemleri insan onayı olmadan yapılmaz** | DB: okuma kesin değilse (yorum/tırnak atılıp ilk kelime SELECT/SHOW/EXPLAIN/WITH/… ve yazma kelimesi yoksa okuma; MongoDB hep onay; Redis okuma komutu listesi) `lessmcp.approve` penceresi (`y`/`n`, sıra). Okumalar ek olarak salt okunur oturumda: PostgreSQL `PGOPTIONS=-c default_transaction_read_only=on`, MySQL/MariaDB `SET SESSION TRANSACTION READ ONLY`, SQLite `PRAGMA query_only`; SQL Server yalnız sınıflandırıcıya güvenir. Git: stage/unstage onaysız (geri alınır), discard onaylı; commit/push/reset aracı yok (panelde de yok). AI kabukta git/SQL çalıştırabilir; onu engellemek AI CLI'ının kendi izin ayarının işi. Parola/URL AI'a verilmez. |
+| 69 | **Run paneli çalıştırma ayarları** (`e`, MCP `run_set_config`): profil, ortam, VM seçenekleri, argümanlar | `stdpath("data")/run_configs.json`, öğe id'sine göre (testte `NVIM_RUN_CONFIGS_FILE`); profil artık kalıcı. Spring Maven: `-Dspring-boot.run.jvmArguments` (JDWP ile birleşir), `-Dspring-boot.run.arguments`; Gradle: `--args`, VM seçenekleri `jdwp.gradle` `-PrunnerJvmArgs`. Node: VM = `NODE_OPTIONS` (debug'da inspector eklenir), argümanlar `-- …` (boşlukla bölünür, tırnak yok). Gerçek Spring uygulamasıyla denenmedi (Node script'iyle uçtan uca). |
+| 70 | **Fare kelimenin üstünde bekleyince dokümantasyon** (IntelliJ'deki Javadoc tooltip'i), hata tooltip'iyle aynı pencere | `textDocument/hover` fare konumuyla; yanıt gelene kadar fare ayrıldıysa gösterilmez. Kapanma yalnız gerçek tuşla (`on_key` `typed`): scrollview pencere açılınca `normal!` tuşları çalıştırıp tooltip'i kapatıyordu; CursorHold fare tooltip'ini ezmez. Markdown render-markdown ile çizilir (kod bloğu dil renkli, ``` görünmez); `filetype` pencere açıldıktan sonra verilmeli, önce verilince render-markdown çizmiyordu. Tooltip (nofile) başlıkları `#` yerine seviye simgesiyle (`plugins/markdown.lua`; .md dosyalarında LazyVim gibi simgesiz). Sunucu `plaintext` dönerse markdown olarak çizilmez. Ghostty'de gözle denenmedi (lua_ls ile `getmousepos` taklidi). |
 | 44 | **Görsel görüntüleme** (snacks.image, Ghostty kitty graphics) | png/jpg/gif/bmp/webp/tiff/heic/avif/icns/pdf ilk sayfa kod penceresinde; markdown'da satır içi; diğer dillerde imleç üstünde yüzen önizleme. Önizleme tab'ı kurallarına uyar. |
 
 ## Açık konular / öneriler
@@ -453,6 +523,12 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
   eksik kalabilir. Öneri: claudecode'a `terminal.cwd_provider` (ilk kök) + diğer kökler için `--add-dir`.
 
 - PostgreSQL istemcisi (`psql`) kurulu değil; Postgres kullanılacaksa `brew install libpq` (PATH'e zaten ekli).
+- Database paneli: yalnız SQLite ile uçtan uca test edildi (psql/mysql/redis-cli/mongosh kurulu değil; o türlerin
+  komutları denenmedi). Ghostty'de görsel (ikonlar, form, conceal'lı parola) ve Cmd+Enter canlı denenmedi. Veri tab'ında
+  hücre düzenleme yok (yalnız görüntüle/kopyala); "yapı düzenleme" = kolon listesi + ALTER şablonları. Bağlantı testi
+  ayrı bir düğme değil: kaydedince tablolar yüklenir, hata satırda görünür. Redis'te ilk 500 anahtar.
+  Konsolda tek blokta birden çok SELECT varsa sonuçlar tek tabloya karışır (psql/mysql çıktısı art arda gelir).
+- Workspace branch göstergesi checkout sonrası ancak neo-tree yeniden çizilince güncellenir.
 - `application.yml/properties` tamamlama için `spring-boot.nvim` eklenebilir.
 - Shift+Ok ile seçim (mac tarzı) henüz yok.
 - Git paneli: özyinelemeli izleme Linux'ta yok (`shortcut:` notu); gitignore'daki build çıktıları (`target/`,
@@ -476,7 +552,7 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
 - Font: seçicide önizleme yok; fonta özel `font-feature` (ligatür) yazılmıyor; Berkeley Mono "Berkeley Mono" aile
   adıyla aranır (farklı adla kurulursa görünmez); ilk osascript'te macOS Otomasyon izni sorabilir; ekranda canlı
   doğrulanmadı.
-- LESS: program başlık koymazsa yedek başlık `👻`; Cmd+Shift+P komut paletinde Ghostty'nin şaka ve güncelleme
+- LESS: Cmd+Shift+P komut paletinde Ghostty'nin şaka ve güncelleme
   girişleri duruyor. Soğuk `lessed` açılışı çağıranın ortamını uygulamaya taşır. About ve sekmeli başlık görsel
   doğrulanmadı. Sonraki adımlar: notarization + DMG. İlk derlemede macOS bir kez "Dock tile extension" bildirimi
   gösterdi (System Settings → Login Items & Extensions'tan kaldırılabilir).
