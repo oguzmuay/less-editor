@@ -320,10 +320,14 @@ end
 
 --- Renkleri, :GitBlame komutunu ve yenileme autocmd'lerini kurar.
 function M.setup()
-  vim.api.nvim_set_hl(0, "GitBlameLens", { link = "Comment", default = true })
-  vim.api.nvim_set_hl(0, "GitBlameDate", { link = "Comment", default = true })
+  local function highlights()
+    vim.api.nvim_set_hl(0, "GitBlameLens", { link = "Comment", default = true })
+    vim.api.nvim_set_hl(0, "GitBlameDate", { link = "Comment", default = true })
+  end
+  highlights()
   vim.api.nvim_create_user_command("GitBlame", M.toggle, { desc = "Toggle Git Blame column" })
   local group = vim.api.nvim_create_augroup("gitblame", { clear = true })
+  vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = highlights })
   vim.api.nvim_create_autocmd({ "LspAttach", "BufWritePost", "InsertLeave", "TextChanged" }, {
     group = group,
     callback = function(ev)

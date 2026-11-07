@@ -311,6 +311,12 @@ Port yakalanırsa `:8080` gibi gösterilir.
 | Tuş | İş |
 |---|---|
 | **Cmd+7** | Git History paneli — renkli dal grafiği (● commit, ○ merge; her dal kendi renginde), etiketler: ⎇ local branch, ☁ remote branch, ◆ tag |
+| Panelin solundaki **Branches** sütunu | Local (● = HEAD'deki dal, `↑1 ↓2` upstream farkı) ve Remote dallar; gösterilen dal vurgulu |
+| Branches'ta Enter / tek tık | O dalın geçmişini göster (**checkout yapmaz**, önizleme); HEAD'deki dala basınca mevcut dala döner |
+| Branches'ta `c` / çift tık | Dala geç (onay sorar); remote dalda takip eden local dal açılır (varsa ona geçilir) |
+| Branches'ta Space / Enter (grup satırı) | Local / Remote grubunu kapat-aç |
+| Branches'ta sağ tık | Show history / Checkout / Copy name · `y` dal adını kopyala |
+| Panelde `Tab` | Commit listesi ↔ Branches sütunu arasında geç |
 | Panelde Enter / çift tık | Commit'in değişikliklerini kod editöründe **tab** olarak aç (`f` modunda yalnız o dosya) |
 | Panelde `f` | Repo geçmişi ↔ son açtığın dosyanın geçmişi |
 | Panelde `a` | Mevcut dal ↔ tüm dallar |
@@ -454,6 +460,18 @@ Eski dadbod-ui bağlantıları ilk açılışta içe aktarılır (`jdbc:` öneki
 Varsayılan JetBrains Mono. Seçim kalıcıdır ve Ghostty kendiliğinden yeniden yüklenir (olmazsa Cmd+Shift+,).
 Seçenekler: JetBrains Mono, Geist Mono, Berkeley Mono (ücretli — kendin kurarsan), Cascadia Code, Fira Code,
 Maple Mono, IBM Plex Mono, Monaspace Neon / Argon / Xenon / Radon / Krypton.
+
+### Tema
+
+| Komut | İş |
+|---|---|
+| `:Theme` | Tema seçici: listede ↑↓ ile gezerken tema canlı uygulanır, Enter seçer, Esc geri alır |
+| `:Theme <id>` | Doğrudan seç, Tab ile tamamlanır (ör. `:Theme intellij-dark`, `:Theme darcula`) |
+
+Varsayılan Tokyo Night. Seçim kalıcıdır. IntelliJ paletleri: **IntelliJ Dark** (New UI), **IntelliJ Light**, **Darcula**.
+Diğerleri: Tokyo Night (Storm/Moon/Day), Catppuccin (Mocha/Macchiato/Frappé/Latte), VS Code Dark/Light, GitHub
+Dark/Dimmed/Light, One Dark, Kanagawa (Wave/Dragon/Lotus), Rosé Pine (Moon/Dawn), Gruvbox Dark/Light,
+Nightfox/Carbonfox/Dayfox.
 
 ## LESS uygulaması
 

@@ -37,6 +37,7 @@ M.config = {
 
 local state = {
   clean_launch = false,
+  has_ui = false,
   restoring = false,
   layout_pending = false,
 }
@@ -133,12 +134,12 @@ function M.read()
 end
 
 --- Çalışma klasörü bir projeyse onu "son proje" olarak yazar. Yalnızca argümansız (ya da tek klasör argümanlı)
---- açılışlarda, bir arayüz bağlıyken ve özellik açıkken (`vim.g.autorestore`, `NVIM_AUTORESTORE=0`,
+--- açılışlarda, bu oturuma bir arayüz bağlanmışsa ve özellik açıkken (`vim.g.autorestore`, `NVIM_AUTORESTORE=0`,
 --- `NVIM_NO_RESTORE`) yazılır: `nvim dosya.txt`, git commit editörü, headless betikler ve geri yüklemesi kapalı
 --- açılışlar kaydı ezmez. `<leader>qd` ile oturum kaydı
---- durdurulduysa da yazılmaz.
+--- durdurulduysa da yazılmaz. Arayüz şu an değil açılışta aranır: pencere kapatılınca TUI `VimLeavePre`'den önce ayrılır.
 function M.remember()
-  if not state.clean_launch or not enabled() or #vim.api.nvim_list_uis() == 0 then
+  if not state.clean_launch or not enabled() or not state.has_ui then
     return
   end
   if package.loaded.persistence and not require("persistence").active() then
@@ -345,6 +346,7 @@ end
 function M.on_vim_enter()
   local explicit = vim.env.LESS_OPEN_DIR ~= nil
   vim.env.LESS_OPEN_DIR = nil
+  state.has_ui = state.has_ui or #vim.api.nvim_list_uis() > 0
   local others = M.register_instance()
   if not enabled() or vim.g.autorestore_skip or not plain_start() or (others and not explicit) then
     return
@@ -366,6 +368,7 @@ function M.on_vim_enter()
     return
   end
   if opened then
+    M.remember()
     suppress_dashboard()
     if target.kind == "project" then
       vim.notify("Restored project: " .. vim.fn.fnamemodify(target.dir, ":~"))
@@ -497,6 +500,13 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("Dashboard", M.dashboard, { desc = "Open the dashboard" })
 
   local group = vim.api.nvim_create_augroup("autorestore", { clear = true })
+  vim.api.nvim_create_autocmd("UIEnter", {
+    group = group,
+    once = true,
+    callback = function()
+      state.has_ui = true
+    end,
+  })
   vim.api.nvim_create_autocmd("VimEnter", {
     group = group,
     nested = true,

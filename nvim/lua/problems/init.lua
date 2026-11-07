@@ -9,6 +9,7 @@ M.excluded_filetypes = {
   "neo-tree-popup",
   "runner",
   "githistory",
+  "githistorybranches",
   "gitstatus",
   "gitblame",
   "termtabs-summary",

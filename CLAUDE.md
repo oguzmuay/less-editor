@@ -25,6 +25,7 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
                               jdwp.gradle (Gradle bootRun'a JDWP ekleyen init script)
   lua/runner/dap.lua          nvim-dap köprüsü: boş port, runnerId etiketli oturumlar, wait(), detach
   lua/githistory/init.lua     Git History paneli (alt şerit, özel modül); repos() gitstatus tarafından da kullanılır
+  lua/githistory/branches.lua dal listesi (`list(root)` local/remote, ↑↓) ve `checkout(root, branch, locals, cb)`
   lua/githistory/graph.lua    commit grafiği: layout(commits) → parent'lardan şerit hücreleri (╭╮╰╯, renk no)
   lua/gitstatus/init.lua      Git paneli (sol): commit edilmemiş dosyalar, stage/unstage/discard
   lua/gitdiff/init.lua        diff'i kod editöründe tab olarak açar: open({ path?, rev?, staged?, cwd? })
@@ -44,6 +45,8 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/plugins/workspaces.lua  workspaces setup (virtual lazy plugin), neo-tree/snacks override'ları, dashboard `w`
   lua/autorestore/init.lua    açılışta son proje/workspace'i açma, "son" kaydı, varsayılan panel düzeni
   lua/plugins/autorestore.lua autorestore setup (virtual lazy plugin), `Space q h` dashboard, NVIM_SESSIONS_DIR override
+  lua/sysinfo/init.lua        durum satırı: CPU / RAM / disk özeti + "Leaked IP" (yerel IP), 5 sn'lik uv timer
+  lua/plugins/statusline.lua  lualine_z'ye (saatin soluna) sysinfo bileşenleri
   lua/plugins/scrollbar.lua   nvim-scrollview (sağ kenar işaretleri) + `problems` virtual plugin
   lua/problems/init.lua       kod penceresi winbar'ında problem sayacı + ↑↓, jump(), is_code_window()
   lua/problems/hover.lua      hata/uyarı tooltip'i: CursorHold ve fare bekleyişinde satırın diagnostikleri, tam metin;
@@ -59,6 +62,10 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/plugins/markdown.lua    render-markdown: tooltip (nofile) başlıklarında seviye simgesi
   lua/plugins/image.lua       snacks.image: görsel dosyaları/markdown görselleri (kitty graphics), Ghostty yedek tespiti
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
+  lua/theme/init.lua          :Theme — tema listesi, canlı önizlemeli seçici, kalıcı seçim, Ghostty kenarına OSC 11
+  lua/theme/intellij.lua      IntelliJ Dark / Light / Darcula paletleri → vurgu grupları (colors/*.lua çağırır)
+  lua/plugins/theme.lua       theme setup, LazyVim `colorscheme` = theme.load(), ek tema eklentileri (lazy)
+  colors/                     intellij-dark.lua, intellij-light.lua, darcula.lua
   lua/plugins/font.lua        font setup (virtual lazy plugin)
   lua/plugins/cursortrail.lua imleç izi (smear-cursor.nvim), `:CursorTrail`, `Space u t`, kalıcı seçim
   KISAYOLLAR.md               kullanıcıya yönelik kısayol özeti (Cmd+K arama penceresinin de kaynağı)
@@ -271,6 +278,14 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   "Press Cmd+Shift+, to reload Ghostty". Dosya yoksa Ghostty varsayılanı (gömülü JetBrains Mono). Kurulu fontlar
   `ghostty +list-fonts` ile (~0,6 sn; PATH'te yoksa `/Applications/Ghostty.app/Contents/MacOS/ghostty`). Kurulu olmayan
   font reddedilir + `brew install --cask` önerisi. Nerd Font varyantı gerekmez: Ghostty gömülü "Symbols Nerd Font" taşır.
+- **Tema (`lua/theme`):** seçim `stdpath("state")/theme` (tema id'si; testte `NVIM_THEME_FILE`), açılışta LazyVim
+  `opts.colorscheme` fonksiyonu `theme.load()` (yoksa/bozuksa `tokyonight-night`). Her girişte `background` açıkça
+  verilir (onedark/kanagawa önceki temanın `background`'undan stil seçiyordu). Seçici Snacks `select` düzeni,
+  `on_change` canlı uygular (imleç mevcut temaya ulaşana kadar değil), Esc `on_close`'da eskiye döner. Ek temalar
+  `lazy = true`, lazy.nvim `:colorscheme`'de yükler. `ColorScheme`'de Normal bg OSC 11 ile Ghostty kenarına
+  (`nvim_ui_send`), çıkışta OSC 111. IntelliJ şemaları kendi üreticimiz: treesitter + `@lsp.type/typemod.*` (jdtls,
+  vtsls) + neo-tree/gitsigns/snacks/flash. **Panel modülleri vurgu tanımlarını `ColorScheme`'de yenilemeli** (`hi clear`
+  siler; gitblame bu yüzden düzeltildi).
 - **Önizleme tab'ı (`lua/previewtab`):** Files (neo-tree `<cr>`, `<LeftRelease>` tek tık, `<2-LeftMouse>`) ve Git
   paneli (`open_file`) `previewtab.open` üzerinden açar. Tek önizleme; değiştirilirken bufferline `state.custom_sort`'ta
   eski id yeniyle değiştirilir (yuva korunur; `BufAdd`'de yeni buffer sona eklenir, yoksa `table.sort` sırası kararsız),
@@ -374,7 +389,8 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   sayılmaz) → cwd'nin kendi oturumu → son kayıt → (bulunamazsa) dashboard.
   - "Son" kaydı kendimiz tutarız (`stdpath("state")/autorestore.json`, `{version,kind,dir,name?,time}`); persistence
     mtime'ı kullanılmaz çünkü ev klasöründe `:e not.txt` + çıkış da oturum yazar.
-  - Kayıt DirChanged + VimLeavePre'de, yalnız: argümansız ya da `nvim .` açılış, headless değil, özellik açık,
+  - Kayıt DirChanged, otomatik açılış ve VimLeavePre'de (arayüz varlığı açılışta işaretlenir: LESS penceresi
+    kapanınca TUI `VimLeavePre`'den önce ayrılır, eskiden bu yüzden kayıt hiç yazılmıyordu), yalnız: argümansız ya da `nvim .` açılış, headless değil, özellik açık,
     `Space q d` ile durdurulmamış, cwd workspace ya da işaretçili klasör, cwd `/tmp`,`/private/tmp`,`/var/folders` dışı.
     `NVIM_AUTORESTORE_FILE` verilince geçici klasörler de kaydedilir (test).
   - Atlanır: dosya/klasör argümanı, `+cmd`/`-c`/`-S`/`-q`/`-d`/`-t`/`-b`/`-`, stdin, headless, `nvim +Dashboard`,
@@ -502,6 +518,9 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 68 | **AI'ın tehlikeli işlemleri insan onayı olmadan yapılmaz** | DB: okuma kesin değilse (yorum/tırnak atılıp ilk kelime SELECT/SHOW/EXPLAIN/WITH/… ve yazma kelimesi yoksa okuma; MongoDB hep onay; Redis okuma komutu listesi) `lessmcp.approve` penceresi (`y`/`n`, sıra). Okumalar ek olarak salt okunur oturumda: PostgreSQL `PGOPTIONS=-c default_transaction_read_only=on`, MySQL/MariaDB `SET SESSION TRANSACTION READ ONLY`, SQLite `PRAGMA query_only`; SQL Server yalnız sınıflandırıcıya güvenir. Git: stage/unstage onaysız (geri alınır), discard onaylı; commit/push/reset aracı yok (panelde de yok). AI kabukta git/SQL çalıştırabilir; onu engellemek AI CLI'ının kendi izin ayarının işi. Parola/URL AI'a verilmez. |
 | 69 | **Run paneli çalıştırma ayarları** (`e`, MCP `run_set_config`): profil, ortam, VM seçenekleri, argümanlar | `stdpath("data")/run_configs.json`, öğe id'sine göre (testte `NVIM_RUN_CONFIGS_FILE`); profil artık kalıcı. Spring Maven: `-Dspring-boot.run.jvmArguments` (JDWP ile birleşir), `-Dspring-boot.run.arguments`; Gradle: `--args`, VM seçenekleri `jdwp.gradle` `-PrunnerJvmArgs`. Node: VM = `NODE_OPTIONS` (debug'da inspector eklenir), argümanlar `-- …` (boşlukla bölünür, tırnak yok). Gerçek Spring uygulamasıyla denenmedi (Node script'iyle uçtan uca). |
 | 70 | **Fare kelimenin üstünde bekleyince dokümantasyon** (IntelliJ'deki Javadoc tooltip'i), hata tooltip'iyle aynı pencere | `textDocument/hover` fare konumuyla; yanıt gelene kadar fare ayrıldıysa gösterilmez. Kapanma yalnız gerçek tuşla (`on_key` `typed`): scrollview pencere açılınca `normal!` tuşları çalıştırıp tooltip'i kapatıyordu; CursorHold fare tooltip'ini ezmez. Markdown render-markdown ile çizilir (kod bloğu dil renkli, ``` görünmez); `filetype` pencere açıldıktan sonra verilmeli, önce verilince render-markdown çizmiyordu. Tooltip (nofile) başlıkları `#` yerine seviye simgesiyle (`plugins/markdown.lua`; .md dosyalarında LazyVim gibi simgesiz). Sunucu `plaintext` dönerse markdown olarak çizilmez. Ghostty'de gözle denenmedi (lua_ls ile `getmousepos` taklidi). |
+| 71 | **`:Theme` ile tema seçimi**, IntelliJ paletleri dahil (IntelliJ Dark New UI, IntelliJ Light, Darcula) | Listede gezerken canlı önizleme, Esc geri alır, seçim kalıcı. IntelliJ şemaları eklenti değil kendi üreticimiz (eklenti yoktu / Treesitter + jdtls semantic token'ları kapsamıyordu). Yanına Tokyo Night, Catppuccin, VS Code, GitHub, One Dark, Kanagawa, Rosé Pine, Gruvbox, Nightfox. Ghostty kenarı OSC 11 ile tema rengine boyanır. Ghostty'de gözle denenmedi. |
+| 72 | **Git History'de solda Branches sütunu** (alt şeritte geçmişin solunda, 34 sütun): Local + Remote dallar; Enter / tek tık o dalın geçmişini gösterir (checkout yok), `c` / çift tık / sağ tık → Checkout (onaylı) | Remote daldan checkout = takip eden local dal (`git switch -c x --track origin/x`; local varsa ona geçer). İki pencere tek panel: Cmd+7 / `q` ikisini birlikte kapatır, `Tab` aralarında geçer. Yenileme `.git` özyinelemeli izlenerek (HEAD, refs, packed-refs, FETCH_HEAD; index/objects yok sayılır). Ghostty'de gözle denenmedi (geçici repoda headless test). |
+| 73 | **Durum satırının en sağında kaynak kullanımı + "Leaked IP"** (saatin solunda): `CPU %`, `kullanılan/toplam RAM`, ev klasörü diskinde boş alan, yerel IPv4 şaka etiketiyle | Ayrıntısız ama okunur (kullanıcı isteği). CPU `uv.cpu_info()` farkı, RAM macOS'ta `vm_stat` (uygulama + wired + sıkıştırılmış ≈ Activity Monitor "Memory Used"; libuv "free" önbelleği dolu sayar), Linux'ta MemAvailable; disk `fs_statfs($HOME)` (APFS'de `/` salt okunur sistem birimi). IP önce en0/eth0/wlan0. Dar ekranda gizlenir (<120 / <90 sütun). Ghostty'de gözle bakılmadı. |
 | 44 | **Görsel görüntüleme** (snacks.image, Ghostty kitty graphics) | png/jpg/gif/bmp/webp/tiff/heic/avif/icns/pdf ilk sayfa kod penceresinde; markdown'da satır içi; diğer dillerde imleç üstünde yüzen önizleme. Önizleme tab'ı kurallarına uyar. |
 
 ## Açık konular / öneriler
