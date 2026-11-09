@@ -31,6 +31,8 @@ local M = {}
 ---@field stopping boolean?
 ---@field after_exit fun()?
 ---@field partial string?
+---@field last_line string? son boş olmayan tam çıktı satırı (soru bağlamı)
+---@field asked string? cevabı sorulmuş bekleyen soru satırı (aynı soru tekrar sorulmasın)
 
 ---@class RunnerConfig
 ---@field profile string?
@@ -327,6 +329,21 @@ function M.item(id)
   return state.items[id]
 end
 
+--- Çalışan (job'ı olan) öğeleri etiket sırasıyla döndürür.
+---@return RunnerItem[]
+function M.running()
+  local list = {}
+  for _, item in pairs(state.items) do
+    if item.job then
+      list[#list + 1] = item
+    end
+  end
+  table.sort(list, function(a, b)
+    return a.label < b.label
+  end)
+  return list
+end
+
 local function configs_file()
   return vim.env.NVIM_RUN_CONFIGS_FILE or (vim.fn.stdpath("data") .. "/run_configs.json")
 end
@@ -551,6 +568,40 @@ local function on_line(item, line)
   return changed
 end
 
+--- ANSI kaçış dizilerini ve kenar boşluklarını atar.
+---@param s string
+---@return string
+local function plain(s)
+  return vim.trim((s:gsub("\27%[[%d;?]*[%a@]", ""):gsub("\27%][^\7]*\7", ""):gsub("[\r\7]", "")))
+end
+
+local CONFIRM_PATTERNS = { "%(%s*[Yy]e?s?%s*/%s*[Nn]o?%s*%)$", "%[%s*[Yy]e?s?%s*/%s*[Nn]o?%s*%]$" }
+
+--- Süreç bitmemiş son satırda `(Y/n)` / `[y/N]` gibi bir onay sorusuyla girdi bekliyorsa (ör. react-scripts
+--- "port 3000 dolu, başka portta çalışsın mı?") Yes/No penceresi açar, cevabı terminale yazar. Log buffer'ı normal
+--- modda açıldığı için doğrudan `Y` yazmak sürece gitmiyordu. Pencere kapatılırsa cevap log'da `i` ile verilebilir.
+---@param item RunnerItem
+local function ask_confirm(item)
+  local tail = plain(item.partial or "")
+  local waiting = false
+  for _, pat in ipairs(CONFIRM_PATTERNS) do
+    waiting = waiting or tail:find(pat) ~= nil
+  end
+  if not waiting or item.asked == tail then
+    return
+  end
+  item.asked = tail
+  local context = item.last_line and item.last_line ~= tail and (item.last_line:gsub("^[?›%s]+", "") .. " ") or ""
+  local question = context .. tail:gsub("^[?›%s]+", ""):gsub("%s*›?%s*[%(%[][^%)%]]*[%)%]]$", "")
+  vim.schedule(function()
+    vim.ui.select({ "Yes", "No" }, { prompt = item.label .. ": " .. question }, function(choice)
+      if choice and item.job and item.asked == tail then
+        vim.api.nvim_chan_send(item.job, choice == "Yes" and "y\r" or "n\r")
+      end
+    end)
+  end)
+end
+
 --- Terminal çıktısını satırlara böler (parça sınırında bölünen satır bir sonraki parçayla birleştirilir) ve işler.
 ---@param item RunnerItem
 ---@param data string[]
@@ -564,7 +615,12 @@ local function on_output(item, data)
   local changed = false
   for _, line in ipairs(data) do
     changed = on_line(item, (line:gsub("\r$", ""))) or changed
+    local text = plain(line)
+    if text ~= "" then
+      item.last_line, item.asked = text, nil
+    end
   end
+  ask_confirm(item)
   if changed then
     vim.schedule(render)
   end
@@ -620,6 +676,7 @@ function M.start(item, mode)
   end
   item.status, item.port, item.stopping = item.ready and "starting" or "running", nil, false
   item.mode, item.debug_port, item.debug_targets, item.dap_state, item.partial = mode, debug_port, {}, nil, nil
+  item.last_line, item.asked = nil, nil
   local cmd = item.cmd(item)
   local cfg = item.config or {}
   local env = vim.deepcopy(cfg.env or {})
@@ -946,6 +1003,7 @@ local function create_buf()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = FT
   vim.bo[buf].bufhidden = "hide"
+  require("workbench").list_cursor(buf)
   local function map(lhs, fn)
     vim.keymap.set("n", lhs, function()
       local entry = current()

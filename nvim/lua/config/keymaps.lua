@@ -35,14 +35,18 @@ map("n", "<leader>j", function() require("runner").pick() end, { desc = "Run: pi
 
 -- Editör
 map({ "n", "i", "v" }, "<D-s>", "<cmd>w<cr><esc>", { desc = "Save" })
-map(nt, "<D-f>", function() Snacks.picker.files() end, { desc = "Find file" })
+map({ "n", "t", "v" }, "<D-f>", function() Snacks.picker.files() end, { desc = "Find file" })
+-- Yazarken Cmd+F dosya içinde arar: normal moda geçip `/` (sonraki/önceki eşleşme n / N)
+map("i", "<D-f>", "<Esc>/", { desc = "Search in file" })
 map(nt, "<D-e>", function() Snacks.picker.recent() end, { desc = "Recent files" })
 map(nt, "<D-k>", function() require("shortcuts").open() end, { desc = "Search shortcuts" })
 map(nt, "<D-F>", function() Snacks.picker.grep() end, { desc = "Grep in project" })
 map(nt, "<D-E>", wb.files, { desc = "Panel: Files" })
 map("n", "<D-w>", wb.close_tab, { desc = "Close buffer" })
 -- Cmd+Q (yalnız LESS'te Neovim'e gelir): bu pencereyi kapatır, diğer LESS pencereleri açık kalır
-map({ "n", "i", "v", "t" }, "<D-q>", "<cmd>confirm qa<cr>", { desc = "Close this window (quit Neovim)" })
+-- Run panelinde çalışan süreç varsa önce düzgün kapatılır (lua/runner/shutdown.lua)
+map({ "n", "i", "v", "t" }, "<D-q>", function() require("runner.shutdown").quit("confirm qall") end, { desc = "Close this window (quit Neovim)" })
+map("n", "<leader>qq", function() require("runner.shutdown").quit("qall") end, { desc = "Quit All" })
 map("n", "<D-/>", "gcc", { remap = true, desc = "Toggle comment" })
 map("v", "<D-/>", "gc", { remap = true, desc = "Toggle comment" })
 map("t", "<C-q>", "<C-\\><C-n>", { desc = "Terminal: normal mode" })

@@ -119,6 +119,7 @@ Listelerde mouse ile çift tık seçer.
 | Tuş | İş |
 |---|---|
 | **Cmd+F** | Dosya adıyla ara (tüm repo) |
+| **Cmd+F** (insert modda) | Açık dosyanın içinde ara (`/`; Enter, sonra `n` / `N` sonraki / önceki) |
 | **Cmd+Shift+F** | Dosya içeriğinde ara (tüm repo) |
 | **Cmd+E** | Son açılan dosyalar |
 | `:Claude account` | Claude hesabı seç ya da ekle (yeni oturumlar o hesapla açılır; açık oturumlar kendi hesabında kalır) |
@@ -302,6 +303,12 @@ Durum ikonları:  durdu ·  başlıyor ·  çalışıyor ·  başar�
 Debug rozeti: ` jdwp :5006 · attached` (yeşil, birden çok süreçte `×N`) · ` detached` (gri) ·
 `waiting for jdtls…` / `attaching…` (sarı). Grup satırında ` n` = debug'daki öğe sayısı.
 
+Çıkarken (Cmd+Q, `:qa`, `:wqa`, `:xa`, `Space q q`) Run'da çalışan süreç varsa önce hepsine Ctrl+C (düzgün kapanış) gider ve
+ortada liste açılır: ↑↓ gez, `k` seçileni zorla öldür, `K` hepsini, `q` / Esc çıkışı iptal et. Hepsi kapanınca LESS kapanır.
+
+Süreç `(Y/n)` / `[y/N]` sorusuyla beklerse (ör. react-scripts "port dolu, başka portta çalışsın mı?") Yes/No penceresi açılır;
+kapatılırsa log penceresinde `i` ile terminal moduna geçip cevap yazılabilir.
+
 Debug notları: Spring uygulaması debugger'ı beklemeden açılır, jdtls hazır olunca (ilk açılışta 30–90 sn) bağlanır;
 breakpoint'ler o andan sonra çalışır. Node'da script'in açtığı tüm node süreçlerine otomatik bağlanılır.
 Debug sırasında adım atma vb. için "Debug ve test" bölümündeki `Space d …` tuşları.
@@ -413,6 +420,7 @@ Eski dadbod-ui bağlantıları ilk açılışta içe aktarılır (`jdbc:` öneki
 | `Space d C` | İmlece kadar çalıştır |
 | `Space d t` | Debug'ı bitir |
 | `Space d e` | İfade değerlendir |
+| `Space d u` | Debug paneli (alt şerit: Variables · Frames · REPL + kontrol çubuğu); breakpoint'te kendiliğinden açılır, debug bitince kapanır |
 | `Space t r` | İmleçteki testi çalıştır |
 | `Space t t` | Dosyadaki testleri çalıştır |
 | `Space t T` | Tüm testler |

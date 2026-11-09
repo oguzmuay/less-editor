@@ -23,6 +23,7 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/runner/init.lua         Run paneli: ağaç, aç/kapat, job/log yönetimi (özel modül)
   lua/runner/providers/       Run sağlayıcıları: spring.lua, node.lua (yeni kaynak = discover(root) döndüren dosya),
                               jdwp.gradle (Gradle bootRun'a JDWP ekleyen init script)
+  lua/runner/shutdown.lua     çıkışta çalışan Run süreçlerini Ctrl+C ile kapatır; süreç listesi (k / K ile SIGKILL)
   lua/runner/dap.lua          nvim-dap köprüsü: boş port, runnerId etiketli oturumlar, wait(), detach
   lua/githistory/init.lua     Git History paneli (alt şerit, özel modül); repos() gitstatus tarafından da kullanılır
   lua/githistory/branches.lua dal listesi (`list(root)` local/remote, ↑↓) ve `checkout(root, branch, locals, cb)`
@@ -60,6 +61,9 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/previewtab/init.lua     VS Code tarzı önizleme tab'ı: open(path, open_fn, keep), get(), promote(buf), neotree()
   lua/plugins/previewtab.lua  previewtab setup (virtual plugin; bufferline opts'ta yamaları kurar)
   lua/plugins/markdown.lua    render-markdown: tooltip (nofile) başlıklarında seviye simgesi
+  lua/plugins/dap.lua         dap-ui kendi split düzeniyle açılmaz; `Space d u` → workbench.debug(), dinleyiciler debugui'de
+  lua/debugui/init.lua        Debug paneli (alt şerit): dap-ui Variables | Frames | REPL, breakpoint'te otomatik açılış
+  lua/plugins/input.lua       Snacks input (vim.ui.input) odağı kaybedince iptal edilir (asılı prompt kalmasın)
   lua/plugins/image.lua       snacks.image: görsel dosyaları/markdown görselleri (kitty graphics), Ghostty yedek tespiti
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
   lua/theme/init.lua          :Theme — tema listesi, canlı önizlemeli seçici, kalıcı seçim, Ghostty kenarına OSC 11
@@ -223,6 +227,9 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   - **Node debug:** `NODE_OPTIONS += --inspect=127.0.0.1:0` (sabit port paket yöneticisine giderdi). Her
     `Debugger listening` satırında `lsof` ile pid; job'ın kendisi (pm) ve kapanmış port atlanır, diğer her node süreci
     ayrı `pwa-node` attach (`autoAttachChildProcesses=false`). Rerun eski portun boşalmasını ≤10 sn bekler (EADDRINUSE).
+  - Onay sorusu: bitmemiş son satır (ANSI atılmış) `(Y/n)`/`[y/N]` ile bitiyorsa `vim.ui.select` Yes/No → `chansend`
+    `y\r`/`n\r`; aynı soru bir kez sorulur (`item.asked`, yeni tam satırda sıfırlanır). Log normal modda açıldığı için
+    doğrudan yazmak sürece gitmiyordu.
   - Panel ilk açılışta global `<RightMouse>` expr eşlemesi kurar (yalnız Run paneli üstünde yakalar, başka yerde
     PopUp); zaten global eşleme varsa kurmaz. Satır sonu butonları metin genişliği ≥ 37 sütunsa çizilir.
 - **Diff tab'ı (`lua/gitdiff`):** `require("gitdiff").open({ path?, rev?, staged?, cwd? })` → `buf|nil`.
@@ -269,6 +276,9 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
     türe göre kolonlar). Tırnaksız boş CSV alanı / `NULL` hücresi = NULL. Kolon en fazla 40 görüntü sütunu (`…`),
     sayısal kolon sağa yaslı. Sabit başlık winbar'da (problems `CUSTOM_WINBARS` ile kod penceresinin winbar'ı
     filetype'a göre değişir), `leftcol` ve `textoff` ile hizalı, `WinScrolled`'da `redrawstatus!`. `wrap` buffer-yerel kapalı.
+- **Liste imleci (`workbench.list_cursor(buf)`):** panel buffer'ında imleci gizler (`guicursor` normal mod, blend 100),
+  `cursorline` açar, sütunu 0'a kilitler; global `guicursor` pencereden çıkınca geri yüklenir. Run `create_buf`'ta,
+  neo-tree `FileType` autocmd'iyle. Yeni liste paneli de bunu çağırabilir.
 - **Ortak sağ tık (`workbench.on_right_click(name, handler)`):** panellerin global `<RightMouse>` expr eşlemesi tek
   yerde; Run ve Git paneli buraya kaydolur (eskiden ilk kuran kazanıyordu). Yeni panel sağ tıkı da bunu kullanmalı.
 - **Font (`lua/font`):** Font Ghostty'de çizilir. `config.ghostty` sonunda `config-file = ?~/.config/ghostty/font.ghostty`
@@ -527,6 +537,11 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 73 | **Durum satırının en sağında kaynak kullanımı + "Leaked IP"** (saatin solunda): `CPU %`, `kullanılan/toplam RAM`, ev klasörü diskinde boş alan, yerel IPv4 şaka etiketiyle | Ayrıntısız ama okunur (kullanıcı isteği). CPU `uv.cpu_info()` farkı, RAM macOS'ta `vm_stat` (uygulama + wired + sıkıştırılmış ≈ Activity Monitor "Memory Used"; libuv "free" önbelleği dolu sayar), Linux'ta MemAvailable; disk `fs_statfs($HOME)` (APFS'de `/` salt okunur sistem birimi). IP önce en0/eth0/wlan0. Dar ekranda gizlenir (<120 / <90 sütun). Ghostty'de gözle bakılmadı. |
 | 74 | **Workspace: aynı adla "yeni" → o workspace'e klasör ekleme; klasörsüz workspace açılınca önce klasör ekleme; projeler listesinde Ctrl+X ile silme** | `workspaces.existing(name)` ad çakışmasını (slug, büyük/küçük harf duyarsız) bulur, `ui.new` hata yerine `add_folder` açar. `workspaces.open` kökü olmayan workspace'te `ui.add_folder` → eklenince `open` (tüm açılış yolları: liste, `:Workspace open`, autorestore). Projeler listesine "Manage workspaces…" girişi; silme onayında ilk seçenek "Cancel". |
 | 75 | **Cmd+Q yalnız o LESS penceresini kapatır** | Kullanıcı yanlışlıkla diğer projelerin pencerelerini kapatıyordu. Ghostty `super+q=csi:113;9u` yalnız `app/less/defaults.ghostty`'de (normal Ghostty'nin Cmd+Q'su değişmez), Neovim `<D-q>` → `:confirm qa` (kaydedilmemiş dosya sorulur, çalışan terminal/Claude süreçleri kapanır, oturum kaydedilir); Neovim çıkınca pencere kapanır. Tüm uygulama: menü LESS > Quit LESS. Kurulu uygulamada etkili olması için `make app` + `make install` gerekir. |
+| 76 | **Debug paneli alt şeritte** (`Space d u`, `lua/debugui`): dap-ui elemanları Variables (%40) · Frames (%25) · REPL (kontrol çubuğu winbar'da); Run / Git History ile tek araç kuralı | dap-ui'nin kendi split'leri `arrange_layout` ile çekişip sağ sütunu (Claude) titretiyor, boş paneller bırakıyordu. Attach'te açılmaz; `breakpoint`/`exception` ile durunca açılır (odak kodda kalır, `step` açmaz), son oturum bitince kapanır. Kontroller dap-ui `enable_controls` yerine `%!` ifadesi (pencereyi yalnız ilk açılışta buluyordu). |
+| 77 | **Run çıktısındaki `(Y/n)` sorusu Yes/No penceresiyle sorulur** | Log terminali normal modda açıldığından `Y` sürece gitmiyordu (react-scripts "başka portta çalışsın mı?"). |
+| 78 | **Run ve Files panellerinde imleç gizli, yalnız satır vurgusu; gezinme yalnız öğeler arasında** (`workbench.list_cursor(buf)`) | `guicursor`'a `n:WorkbenchHiddenCursor` (blend 100, TUI gizler), panelden çıkınca eski değer; `CursorMoved`'da sütun 0. Diğer liste panelleri (Git, Git History, DB) henüz almadı. Ghostty'de gözle denenmedi. |
+| 79 | **Insert modda Cmd+F dosya içinde arar** (`<Esc>/`); normal/terminal/görselde dosya araması kaldı | |
+| 80 | **Çıkışta Run süreçleri önce düzgün kapatılır**: her birine Ctrl+C (SIGINT), ortada liste; `k` seçileni / `K` hepsini zorla öldürür (süreç grubuna SIGKILL), `q` çıkışı iptal eder; hepsi kapanınca çıkılır | `:qa`/`:wqa`/`:xa` `guard_cmdline` ile, Cmd+Q ve `Space q q` doğrudan `runner.shutdown.quit`. Kaydedilmemiş dosya sorusu süreçler durdurulmadan önce (Save all / Discard / Cancel). Panelin `s` (Stop) eskisi gibi `jobstop` (SIGHUP). Gerçek Spring/npm ile denenmedi (sahte script'lerle). |
 | 44 | **Görsel görüntüleme** (snacks.image, Ghostty kitty graphics) | png/jpg/gif/bmp/webp/tiff/heic/avif/icns/pdf ilk sayfa kod penceresinde; markdown'da satır içi; diğer dillerde imleç üstünde yüzen önizleme. Önizleme tab'ı kurallarına uyar. |
 
 ## Açık konular / öneriler
@@ -560,7 +575,7 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
   `node_modules`) da yenilemeyi tetikleyebilir; toplu discard yok; Ghostty'de görsel kontrol edilmedi. pty testi
   gerçek nvim açtığı için kullanıcının shada'sı (komut geçmişi) yazılmış olabilir.
 - Run debug: Spring Boot Gradle eklentisiyle gerçek `bootRun` (ve configuration cache) test edilmedi; bun ve
-  Next.js debug denenmedi; LazyVim dap-ui attach olunca otomatik açılır, workbench yerleşimini bozabilir; başka
+  Next.js debug denenmedi; Debug paneli (`debugui`) gerçek Spring/Node oturumunda ve Ghostty'de denenmedi (kontrol çubuğu tıklaması, eleman güncellemesi); Watches/Breakpoints elemanları panelde yok; başka
   eklenti global `<RightMouse>` kurarsa panel odakta değilken sağ tık PopUp açar. İkonlar Ghostty'de görsel kontrol edilmedi.
 - Otomatik açılış: birden çok Ghostty sekmesinde nvim açıksa en son çıkan / proje açan "son" olur. Workspace'ten
   workspace'e geçişte mevcut Claude/terminal tab'ları eski cwd'de kalır (yeni tab için Cmd+T). `workspaces.open()`

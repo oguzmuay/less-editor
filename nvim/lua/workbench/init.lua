@@ -118,6 +118,13 @@ function M.setup()
       M.lock_empty(ev.buf)
     end,
   })
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    pattern = "neo-tree",
+    callback = function(ev)
+      M.list_cursor(ev.buf)
+    end,
+  })
   vim.api.nvim_create_autocmd("SessionLoadPost", {
     group = group,
     callback = function()
@@ -717,6 +724,12 @@ function M.git_history()
   panel(git.find_panel, exclusive_bottom(git.open_panel), git.close_panel)
 end
 
+--- `Space d u`: Debug paneli (dap-ui Variables / Frames / REPL, alt şerit).
+function M.debug()
+  local ui = require("debugui")
+  panel(ui.find_panel, exclusive_bottom(ui.open_panel), ui.close_panel)
+end
+
 --- Cmd+0: Git paneli (commit'lenmemiş değişiklikler, stage/unstage). Files ve DB gibi solda tam boy açılır;
 --- diğer sol panellerle yan yana durabilir.
 function M.git()
@@ -786,6 +799,7 @@ function M.toggle(name)
     runner = { find = function() return require("runner").find_panel() end, close = function(w) require("runner").close_panel(w) end },
     git_history = { find = function() return require("githistory").find_panel() end, close = function(w) require("githistory").close_panel(w) end },
     git = { find = function() return require("gitstatus").find_panel() end, close = function(w) require("gitstatus").close_panel(w) end },
+    debug = { find = function() return require("debugui").find_panel() end, close = function(w) require("debugui").close_panel(w) end },
   }
   local p = assert(panels[name], "unknown panel: " .. name)
   local win = p.find()
@@ -886,15 +900,27 @@ local function exec(cmd)
 end
 
 local closers = { quit = "quit", close = "close", wq = "wq", xit = "xit", exit = "xit" }
+local quitters = { qall = true, quitall = true, wqall = true, xall = true }
 
 --- `CmdlineLeave`: Enter'la çalıştırılacak `:q`, `:quit`, `:close`, `:wq`, `:x`, `:exit` (her kısaltma ve `!` ile)
 --- korunan kod penceresini kapatacaksa komut iptal edilir (`v:event.abort`), yerine `close_window` çalışır.
---- Aralık/sayı verilmiş ya da `|` ile zincirlenmiş komutlara dokunulmaz.
+--- Aralık/sayı verilmiş ya da `|` ile zincirlenmiş komutlara dokunulmaz. `:qa`/`:wqa`/`:xa` Run panelinde çalışan
+--- süreç varsa iptal edilip `runner.shutdown.quit`'e verilir (önce süreçler düzgün kapatılır).
 function M.guard_cmdline()
   if vim.v.event.abort or vim.v.char ~= "\r" then
     return
   end
-  local ok, cmd = pcall(vim.api.nvim_parse_cmd, vim.fn.getcmdline(), {})
+  local line = vim.fn.getcmdline()
+  local ok, cmd = pcall(vim.api.nvim_parse_cmd, line, {})
+  if ok and quitters[cmd.cmd] and cmd.nextcmd == "" and package.loaded["runner"] then
+    if #package.loaded["runner"].running() > 0 then
+      vim.cmd("let v:event.abort = v:true")
+      vim.schedule(function()
+        require("runner.shutdown").quit(line)
+      end)
+    end
+    return
+  end
   local kind = ok and closers[cmd.cmd]
   if not kind or cmd.range or cmd.count or cmd.nextcmd ~= "" or not keep_code(vim.api.nvim_get_current_win()) then
     return
@@ -919,6 +945,50 @@ function M.close_window(cmd, bang, args)
     exec((cmd == "wq" and "write" or "update") .. tail)
   end
   vim.notify("The code editor stays open. Use Cmd+W to close a tab, or :qa to quit LESS.", vim.log.levels.WARN)
+end
+
+local list_cursor = { saved = nil }
+
+--- Liste paneli buffer'ında (Run, Files) imleç gizlenir, satır `cursorline` ile vurgulanır ve sütun hep 0'da kalır:
+--- panelde gezinme yalnız satırlar (öğeler) arasında olur. Gizleme `guicursor`'a normal mod için `blend = 100`
+--- vurgusu eklenerek yapılır (Nvim TUI imleci gizler); pencereden çıkınca eski `guicursor` geri gelir. Komut satırı,
+--- insert vb. modlarda imleç görünür kalır.
+---@param buf integer
+function M.list_cursor(buf)
+  if vim.b[buf].workbench_list_cursor then
+    return
+  end
+  vim.b[buf].workbench_list_cursor = true
+  vim.api.nvim_set_hl(0, "WorkbenchHiddenCursor", { blend = 100, nocombine = true, default = true })
+  local function hide()
+    vim.wo.cursorline = true
+    if not list_cursor.saved then
+      list_cursor.saved = vim.o.guicursor
+      vim.o.guicursor = vim.o.guicursor .. ",n:WorkbenchHiddenCursor"
+    end
+  end
+  local function show()
+    if list_cursor.saved then
+      vim.o.guicursor = list_cursor.saved
+      list_cursor.saved = nil
+    end
+  end
+  local group = vim.api.nvim_create_augroup("workbench.list_cursor." .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, { group = group, buffer = buf, callback = hide })
+  vim.api.nvim_create_autocmd({ "BufLeave", "WinLeave" }, { group = group, buffer = buf, callback = show })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = group,
+    buffer = buf,
+    callback = function()
+      local pos = vim.api.nvim_win_get_cursor(0)
+      if pos[2] ~= 0 then
+        vim.api.nvim_win_set_cursor(0, { pos[1], 0 })
+      end
+    end,
+  })
+  if vim.api.nvim_get_current_buf() == buf then
+    hide()
+  end
 end
 
 return M
