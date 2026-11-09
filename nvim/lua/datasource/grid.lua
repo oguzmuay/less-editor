@@ -223,10 +223,12 @@ local function fit(s, width, right)
 end
 
 --- Tabloyu buffer'a çizer. `info` winbar'da başlık görünürken gösterilir (tablo adı, satır sayısı, tuşlar).
+--- `cell_hl(satır, kolon)` verilirse döndürdüğü vurgu hücreye uygulanır (düzenlenmiş / eklenmiş hücreler).
 ---@param buf integer
 ---@param grid DatasourceGrid
 ---@param info string
-function M.render(buf, grid, info)
+---@param cell_hl? fun(r: integer, c: integer): string?
+function M.render(buf, grid, info, cell_hl)
   local ncol = #grid.columns
   local widths, numeric = {}, {}
   for c = 1, ncol do
@@ -248,7 +250,7 @@ function M.render(buf, grid, info)
   end
   local lines, marks = { border("┌", "┬", "┐") }, {}
   --- Bir tablo satırı kurar; hücre vurguları (bayt aralığı) `marks`'a eklenir.
-  local function add_row(cells, header)
+  local function add_row(cells, header, r)
     local parts, col = { "│" }, #"│"
     for c = 1, ncol do
       local v = cells[c] or ""
@@ -256,6 +258,10 @@ function M.render(buf, grid, info)
       local hl = header and "DatasourceGridHeader" or (v == M.NULL and "Comment" or (numeric[c] and "Number" or nil))
       if hl then
         table.insert(marks, { #lines, col, col + #text, hl })
+      end
+      local extra = r and cell_hl and cell_hl(r, c)
+      if extra then
+        table.insert(marks, { #lines, col, col + #text, extra, 120 })
       end
       table.insert(parts, text)
       table.insert(parts, "│")
@@ -266,8 +272,8 @@ function M.render(buf, grid, info)
   add_row(grid.columns, true)
   local header = lines[2]
   table.insert(lines, border("├", "┼", "┤"))
-  for _, row in ipairs(grid.rows) do
-    add_row(row)
+  for r, row in ipairs(grid.rows) do
+    add_row(row, false, r)
   end
   table.insert(lines, border("└", "┴", "┘"))
 
@@ -280,7 +286,7 @@ function M.render(buf, grid, info)
     vim.api.nvim_buf_set_extmark(buf, ns, i, 0, { end_col = #lines[i + 1], hl_group = "DatasourceGridBorder", priority = 100 })
   end
   for _, m in ipairs(marks) do
-    vim.api.nvim_buf_set_extmark(buf, ns, m[1], m[2], { end_col = m[3], hl_group = m[4], priority = 110 })
+    vim.api.nvim_buf_set_extmark(buf, ns, m[1], m[2], { end_col = m[3], hl_group = m[4], priority = m[5] or 110 })
   end
   views[buf] = { header = header, info = info, grid = grid, first = HEADER_LINES + 1 }
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
@@ -336,23 +342,54 @@ function M.winbar()
   return pad .. "%#DatasourceGridHeader#" .. drop_cols(view.header, wv.leftcol):gsub("%%", "%%%%") .. "%*"
 end
 
---- İmleçteki hücre: kolon adı ve değeri; tablo dışındaysa nil.
+--- İmleçteki hücre (geçerli pencere): satır ve kolon sırası, kolon adı, değer; tablo dışındaysa nil.
 ---@param buf integer
----@return string? column, (string|table)? value
-local function cell_at_cursor(buf)
+---@return integer? r, integer? c, string? column, (string|table)? value
+function M.cell(buf)
   local view = views[buf]
   if not (view and view.grid) then
     return nil
   end
   local row, col = unpack(vim.api.nvim_win_get_cursor(0))
-  local r = view.grid.rows[row - view.first + 1]
-  if not r then
+  local r = row - view.first + 1
+  local cells = view.grid.rows[r]
+  if not cells then
     return nil
   end
   local before = vim.api.nvim_get_current_line():sub(1, col + 1)
   local _, bars = before:gsub("│", "")
   local c = math.max(1, math.min(bars, #view.grid.columns))
-  return view.grid.columns[c], r[c]
+  return r, c, view.grid.columns[c], cells[c]
+end
+
+--- İmleci geçerli pencerede `r`. satırın `c`. hücresinin başına taşır (yeniden çizimden sonra yeri korumak için).
+---@param buf integer
+---@param r integer
+---@param c integer
+function M.goto_cell(buf, r, c)
+  local view = views[buf]
+  if not (view and view.grid) or #view.grid.rows == 0 then
+    return
+  end
+  r = math.max(1, math.min(r, #view.grid.rows))
+  local lnum = view.first + r - 1
+  local line = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1] or ""
+  local pos, n = 0, 0
+  for start in line:gmatch("()│") do
+    n = n + 1
+    if n == c then
+      pos = start + #"│"
+      break
+    end
+  end
+  pcall(vim.api.nvim_win_set_cursor, 0, { lnum, pos })
+end
+
+---@param buf integer
+---@return string? column, (string|table)? value
+local function cell_at_cursor(buf)
+  local _, _, column, value = M.cell(buf)
+  return column, value
 end
 
 --- Hücrenin tam değerini yüzen pencerede gösterir (JSON düzgün girintilenir).
@@ -405,6 +442,8 @@ end
 local function highlights()
   vim.api.nvim_set_hl(0, "DatasourceGridHeader", { link = "Title", default = true })
   vim.api.nvim_set_hl(0, "DatasourceGridBorder", { link = "NonText", default = true })
+  vim.api.nvim_set_hl(0, "DatasourceGridChanged", { link = "DiffChange", default = true })
+  vim.api.nvim_set_hl(0, "DatasourceGridAdded", { link = "DiffAdd", default = true })
 end
 highlights()
 local group = vim.api.nvim_create_augroup("datasource_grid", { clear = true })

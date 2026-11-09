@@ -38,12 +38,14 @@ keybind = super+w=csi:119;9u
 keybind = super+slash=csi:47;9u
 keybind = super+shift+f=csi:102;10u
 keybind = super+shift+e=csi:101;10u
+keybind = super+f8=csi:19;9~
 keybind = super+e=csi:101;9u
 keybind = super+k=csi:107;9u
 keybind = super+p=csi:112;9u
 keybind = super+enter=csi:13;9u
 # Cmd+N: Files panelinde yeni dosya, başka yerde Neovim yeni LESS penceresi açar (keymaps.lua)
 keybind = super+n=csi:110;9u
+keybind = super+shift+n=csi:110;10u
 
 # --- Satır/dosya başı-sonu -> Neovim (Option+Ok kelime atlama Ghostty varsayılanı: ESC b / ESC f)
 keybind = super+arrow_left=csi:1;9D

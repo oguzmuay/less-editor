@@ -29,6 +29,7 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/githistory/branches.lua dal listesi (`list(root)` local/remote, ↑↓) ve `checkout(root, branch, locals, cb)`
   lua/githistory/graph.lua    commit grafiği: layout(commits) → parent'lardan şerit hücreleri (╭╮╰╯, renk no)
   lua/gitstatus/init.lua      Git paneli (sol): commit edilmemiş dosyalar, stage/unstage/discard
+  lua/gitcompare/init.lua     Git paneli: yan yana diff (HEAD ↔ dosya, değişiklik bazında rollback) ve 3 bölmeli merge ekranı
   lua/gitdiff/init.lua        diff'i kod editöründe tab olarak açar: open({ path?, rev?, staged?, cwd? })
   lua/gitblame/init.lua       :GitBlame sütunu + tanım satırı sonunda yazar lens'i (özel modül)
   lua/termtabs/init.lua       Claude + Terminal panellerinde tablar: gruplar, winbar tab çubuğu, geçiş, rename, komutlar
@@ -45,6 +46,7 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/workspaces/ui.lua       workspace seçici ve yönetim menüleri
   lua/plugins/workspaces.lua  workspaces setup (virtual lazy plugin), neo-tree/snacks override'ları, dashboard `w`
   lua/autorestore/init.lua    açılışta son proje/workspace'i açma, "son" kaydı, varsayılan panel düzeni
+  lua/autorestore/layout.lua  proje/workspace başına panel düzeni (açık paneller + boyutlar), layouts.json
   lua/plugins/autorestore.lua autorestore setup (virtual lazy plugin), `Space q h` dashboard, NVIM_SESSIONS_DIR override
   lua/sysinfo/init.lua        durum satırı: CPU / RAM / disk özeti + "Leaked IP" (yerel IP), 5 sn'lik uv timer
   lua/plugins/statusline.lua  lualine_z'ye (saatin soluna) sysinfo bileşenleri
@@ -56,13 +58,17 @@ nvim/                         LazyVim config (~/.config/nvim -> buraya symlink)
   lua/datasource/init.lua     Database paneli (sağ sütun): bağlantı kaydı, ağaç, konsol / veri / yapı tab'ları
   lua/datasource/types.lua    veri kaynağı türleri: ikon, istemci, tablo listeleme / veri / yapı komutları
   lua/datasource/form.lua     tek pencerede çok alanlı form (bağlantı ekle/düzenle)
+  lua/datasource/edit.lua     veri tab'ında bekleyen hücre/satır değişiklikleri + onaylı transaction commit
   lua/plugins/datasource.lua  datasource setup (virtual lazy plugin, vim-dadbod bağımlılığı)
   lua/firstrun/init.lua       LESS ilk açılış ekranı: eklenti ilerlemesi, Mason/LSP kurulum bildirimi
   lua/previewtab/init.lua     VS Code tarzı önizleme tab'ı: open(path, open_fn, keep), get(), promote(buf), neotree()
   lua/plugins/previewtab.lua  previewtab setup (virtual plugin; bufferline opts'ta yamaları kurar)
   lua/plugins/markdown.lua    render-markdown: tooltip (nofile) başlıklarında seviye simgesi
   lua/plugins/dap.lua         dap-ui kendi split düzeniyle açılmaz; `Space d u` → workbench.debug(), dinleyiciler debugui'de
-  lua/debugui/init.lua        Debug paneli (alt şerit): dap-ui Variables | Frames | REPL, breakpoint'te otomatik açılış
+  lua/debugui/init.lua        Debug: Run panelinde logların sağında Variables (+ dap-ui kontrol çubuğu), breakpoint'te otomatik açılış
+  lua/debugui/variables.lua   Variables bölümü: Name|Value|Type tablosu (datasource.grid), değer / null / eleman sil-ekle
+  lua/notes/init.lua          Notlar: Cmd+N ortada yüzen pencere, tab'lı, `.less/notes/*.md` (gitignore), otomatik kayıt
+  lua/plugins/notes.lua       notes setup (virtual lazy plugin), `:Notes`
   lua/plugins/input.lua       Snacks input (vim.ui.input) odağı kaybedince iptal edilir (asılı prompt kalmasın)
   lua/plugins/image.lua       snacks.image: görsel dosyaları/markdown görselleri (kitty graphics), Ghostty yedek tespiti
   lua/font/init.lua           :Font — Ghostty fontunu seçer (~/.config/ghostty/font.ghostty) + reload
@@ -112,7 +118,7 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   `unset` eder). İlk kullanımda macOS terminal uygulaması için Automation izni sorar.
 - **Varsayılanlar:** derlemede `ghostty/config.ghostty`'den (config-file satırları hariç) + LESS ekleri
   (`app/less/defaults.ghostty`: `command` = launcher, `quit-after-last-window-closed`, `auto-update = off`,
-  Cmd+D/Cmd+Shift+D kapalı, Cmd+Q Neovim'e (`super+q=csi:113;9u`, yalnız LESS'te), `config-file = ?~/.config/less/font.ghostty`). Cmd kısayolları tek kaynaktan gelir.
+  Cmd+Shift+D kapalı, Cmd+D Neovim'e (`csi:100;9u`, DB satır kopyala), Cmd+Q Neovim'e (`super+q=csi:113;9u`, yalnız LESS'te), `config-file = ?~/.config/less/font.ghostty`). Cmd kısayolları tek kaynaktan gelir.
 - **Launcher (`app/less/launch`, `#!/bin/zsh -f`):** `LESS_APP=1`, `NVIM_APPNAME=less/nvim`, `LESS_BIN=MacOS/LESS`.
   Kullanıcı ortamı önbellekten: `env -i` temiz tabandan bir kez `$SHELL -lic`, yalnız rc'lerin koyduğu değişkenler
   `$TMPDIR/less-env-$UID`'e (0600, sahiplik kontrolü); rc dosyası daha yeniyse ya da 24 saati geçtiyse yenilenir.
@@ -260,7 +266,9 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
     database,options,file?,url?}]}` (0600; testte `NVIM_DATASOURCE_FILE`). Yoksa `dadbod_ui/connections.json` bir kez
     içe aktarılır. `vim.g.dbs` girdileri `project = true` ile listelenir, düzenlenmez. URL `db#url#format` ile kurulur.
   - Komutlar dadbod adaptörlerinin argv'si (`db#adapter#dispatch(url, "interactive"|"filter"|"command")`) + türe özgü
-    bayraklar (`types.lua`), `vim.system` ile asenkron (20 sn zaman aşımı). Parola dadbod'daki gibi argv'de/URL'de.
+    bayraklar (`types.lua`), `vim.system` ile asenkron (20 sn zaman aşımı). Parola dadbod'daki gibi argv'de/URL'de;
+    yalnız mysql/mariadb'de `run` `-p<parola>`yı `MYSQL_PWD`'ye taşır, `-h localhost -P` varsa `--protocol=TCP` ekler (`mysql_argv`; argv'deki parola uyarısı
+    stderr'in ilk satırı olup ağaçta asıl hatayı gizliyordu).
   - İstemci yoksa (`types.check_client`) `with_client` Install/Cancel sorar, `brew install <t.brew>` arka planda;
     aynı tür için bekleyen istekler kuyruğa girer (tek soru), iptal/hata panelde hata satırı. Homebrew yoksa yalnız uyarı.
   - Konsol: `<veri>/datasource/consoles/<ad>.<sql|redis|js>`, `BufReadPost` ile `b:db` + Cmd+Enter/`Space D`
@@ -414,7 +422,7 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   - Swap: ölü sürecin swap'ı varsa dosya istemsiz salt okunur açılır + uyarı; yükleme `pcall`, hata → dashboard.
   - Workspace: `workspaces.open(name)`; cwd zaten workspace klasöründeyse önce oturum elle yüklenir (open() yüklemez).
     Yüklemeden sonra `workbench.restore_pins()`.
-- **Varsayılan panel düzeni:** `vim.g.default_layout` (varsayılan `{ "files", "claude", "terminal" }`, `false` = kapalı;
+- **Varsayılan panel düzeni** (projenin kayıtlı düzeni yoksa, #99): `vim.g.default_layout` (varsayılan `{ "files", "claude" }` — #81, `false` = kapalı;
   tek açılış `NVIM_DEFAULT_LAYOUT=0`). Açılış otomatiği, proje klasöründe başlatma, dashboard `p`/`s`/`w`,
   `:Workspace open`, `Space f p`, `Space q s`/`q l`, projeye `:cd` sonrası kurulur (`User PersistenceLoadPost` +
   `DirChanged`, `vim.schedule` ile birleşik). Açık panel aranıp dokunulmaz; gizli Claude/terminal tab'ı yeni süreç
@@ -542,6 +550,26 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
 | 78 | **Run ve Files panellerinde imleç gizli, yalnız satır vurgusu; gezinme yalnız öğeler arasında** (`workbench.list_cursor(buf)`) | `guicursor`'a `n:WorkbenchHiddenCursor` (blend 100, TUI gizler), panelden çıkınca eski değer; `CursorMoved`'da sütun 0. Diğer liste panelleri (Git, Git History, DB) henüz almadı. Ghostty'de gözle denenmedi. |
 | 79 | **Insert modda Cmd+F dosya içinde arar** (`<Esc>/`); normal/terminal/görselde dosya araması kaldı | |
 | 80 | **Çıkışta Run süreçleri önce düzgün kapatılır**: her birine Ctrl+C (SIGINT), ortada liste; `k` seçileni / `K` hepsini zorla öldürür (süreç grubuna SIGKILL), `q` çıkışı iptal eder; hepsi kapanınca çıkılır | `:qa`/`:wqa`/`:xa` `guard_cmdline` ile, Cmd+Q ve `Space q q` doğrudan `runner.shutdown.quit`. Kaydedilmemiş dosya sorusu süreçler durdurulmadan önce (Save all / Discard / Cancel). Panelin `s` (Stop) eskisi gibi `jobstop` (SIGHUP). Gerçek Spring/npm ile denenmedi (sahte script'lerle). |
+| 81 | **Açılışta yalnız Files + editör + Claude** (terminal artık varsayılan düzende yok, Cmd+4 ile) | #33'ü daraltır. |
+| 82 | **Markdown'da yazım denetimi ve markdownlint kapalı** | İngilizce `spell` Türkçe metni, markdownlint satır uzunluğu vb. stil kurallarını hata gibi gösteriyordu. marksman (kırık link vb.) kalır. `config/autocmds.lua` + `plugins/markdown.lua` (nvim-lint). Kaydederken conform'un markdownlint/prettier biçimlendirmesi değişmedi. |
+| 83 | **Markdown dosyasında Cmd+P = önizleme aç/kapa** (render-markdown `buf_toggle`, buffer içinde); başlık simgeleri ve checkbox açıldı | md'de pin için `Space b p`. Yan yana `preview()` kod penceresini böleceği için seçilmedi. |
+| 84 | **which-key `v` ile görsel moda girince menü açmaz** (`defer` v/V/Ctrl+V) | Menü görsel modda bir önek tuşuna basınca çıkar. |
+| 85 | **Git panelinden yan yana diff** (`lua/gitcompare`): solda HEAD (scratch, `winfixbuf`), sağda gerçek dosya, ikisi `diffthis`; oluğa ⟲ (tık / `Space r`) → değişiklik HEAD haline (buffer'da, `u` geri alır); winbar Rollback all / Close | #17'deki unified tab Git History ve silinmiş dosya için kalır. Değişiklikler `vim.diff` (histogram) indeksleriyle, rollback `nvim_buf_set_lines` (do/dp değil: sol pencereden de, silme hunk'ında da çalışsın). Bitişik silme + değişiklik tek blok. Kapanış: `q`, ✕, yan pencere kapanması, kod penceresinde buffer değişimi (`BufWinLeave`). |
+| 86 | **Merge ekranı**: sol `:2:` (ours) │ orta gerçek dosya (işaretli) │ sağ `:3:` (theirs); yanlar birbiriyle diff. Blok başında satır sonu butonları (Left / Right / Both, tıklama `getmousepos` ile sütundan), winbar Accept all left/right yalnız işareti duran bloklara (alttan üste), blok kalmayınca Save & mark resolved (`git add`) | Bloklar her değişiklikte işaretlerden yeniden ayrıştırılır (diff3 `|||||||` desteklenir), elle düzenleme de sayılır. Rebase'de ours/theirs yer değiştirir; etiketler işaret satırlarından. Gerçek LESS penceresinde gözle bakılmadı (pty'de tıklamalar doğrulandı). |
+| 88 | **Veri tab'ında düzenleme** (`datasource/edit.lua`, yalnız SQL): `e` hücre, `Del` NULL, Cmd+D / `c` satır kopyala, `u`/`U` geri al; değişiklikler bekler (vurgulu, buffer `modified`), Cmd+S / `:w` (`BufWriteCmd`) SQL'i `lessmcp.approve` penceresinde gösterir, onayla tek transaction (`types.transaction`) | UPDATE birincil anahtarla (`types.pk_cmd`, commit anında okunur); anahtarsız tabloda yalnız INSERT. Kopyalanan satırda düzenlenmemiş PK kolonları INSERT'e girmez. Değerler hep dize sabiti (`types.value`; MySQL'de `\` kaçışı, SQL Server `N'…'`). Silme yok (istenmedi). Ghostty: LESS'te `super+d=csi:100;9u` (eskiden unbind; `make app` + `make install` gerekir). SQLite ile uçtan uca, MySQL'de yalnız PK sorgusu denendi; Ghostty'de gözle bakılmadı. |
+| 89 | **Sorgu konsolu kendiliğinden kaydedilir**, "kaydedilmedi" durumuna düşmez, çıkışta sorulmaz | `autosave`: TextChanged / InsertLeave / BufLeave / FocusLost / QuitPre, yazarken 300 ms; `noautocmd update` (conform SQL'i biçimlendirmesin). Cmd+S konsolda aynı yazma. |
+| 90 | **SQL dosyalarında insert modda ←/→ çalışır** | Neovim'in `ftplugin/sql.vim`'i okları `sqlcomplete#Drill…`'e bağlıyordu (tanımsız fonksiyon, imleç kımıldamıyordu) → `options.lua`'da `g:omni_sql_no_default_maps = 1`. |
+| 91 | **Debug'da değişken düzenleme: Variables bölümü kendi modülümüz** (`debugui/variables.lua`, dap-ui `scopes` yerine); `e` / F2 / yaprakta ⏎ → dolu `vim.ui.input` → DAP `setVariable` (yoksa `setExpression`) | dap-ui'nin `e`'si bölümü prompt buffer'ına çevirip değeri göndermiyordu. js-debug aynı duraklamada listeyi önbellekten verir → başarılı yanıttaki değer `overrides`'ta tutulur (durak/devamda silinir). Node'da duran oturum çocuk oturum: `event_stopped`/`scopes` dinleyicisinden saklanır (`dap.session()` frame'siz ebeveyni döndürebilir). Kendi `scopes` isteklerimiz `after.scopes` dinleyicisinde sayılıp atlanır (sonsuz döngü). Son oturum bitince `on_session(_, nil)` paneli kapatır (eski `event_terminated` dinleyicisi oturum listesi boşalmadan bakıyordu). Node ile uçtan uca denendi; Spring/jdtls ve Ghostty'de gözle denenmedi. |
+| 92 | **Kod penceresinin oluğuna (satır no / işaret sütunu) tık = breakpoint**; IntelliJ tuşları F8 over, F7 into, Shift+F8 out, F9 devam | Global `<LeftMouse>` expr eşlemesi (`keymaps.lua`): `getmousepos().wincol <= textoff` ve `problems.is_code_window`; değilse normal tık. Cmd+F8 eklenmedi. |
+| 93 | **Debug Variables Run panelinin içinde, logların sağında** (#76'daki ayrı Debug şeridi kalktı; Frames ve REPL şeritte yok, REPL `Space d r`) | Breakpoint'te Run paneli kayboluyordu. `debugui.open_panel` Run kapalıysa `workbench.open_runner` ile açar, Variables'ı şeridin sonuna ekler (genişlik şeridin %30'u, en az 40, `winfixwidth`), odağı değiştirmez; gizlenince Run paneli 56'ya döner. `Space d u` yalnız Variables'ı aç/odakla/kapat. |
+| 94 | **Run paneli son halini hatırlar** | `runner.remember()` kapanışta ve şerit başka araca verilirken (`exclusive_bottom`) görünen log buffer'ını ve Variables'ın açık olup olmadığını `state.last`'e yazar; `open_panel` logu (`M.logs`) ve debug oturumu sürüyorsa Variables'ı geri açar. |
+| 95 | **Cmd+F8 = breakpoint koy/kaldır** (IntelliJ), normal ve insert modda | Ghostty `super+f8=csi:19;9~` → `<D-F8>` (pty ile doğrulandı); LESS'te `make app` + `make install` sonrası. Mac'te F tuşları için klavye ayarına göre `fn` gerekebilir. |
+| 96 | **Panel boyut sınırları** (`workbench` `LIMITS` + `clamp_sizes`): sol paneller (sağ sütun/şerit dışı `winfixwidth`, kod değil) 20 – %30 genişlik ve en çok 610 pt, sağ sütun 30 – %50 ve en çok 800 pt, alt şerit 6 – %50 yükseklik | `arrange_layout` her çağrıda uygular; ayrıca `WinResized`'da eşzamanlı `workbench.clamp()` (WinResized ekran çizilmeden önce gelir; `vim.schedule` ile yapılınca fareyle sürüklerken pencere önce büyük çizilip geri sıçrıyordu — titreme). pty'de SGR fare sürüklemesiyle her çizimde genişlik ölçüldü: düzeltmeden önce 155'e kadar çiziliyordu, sonra hiç 72'yi geçmiyor. `vim.g.workbench_limits = { left = { max = 0.4 } }` ile ezilir (1'den küçük = oran). `max_px` (kullanıcı "610 / 800" dedi, macOS point varsayıldı) sütuna `font-size × 0,6` ile çevrilir; font boyutu Ghostty config'inden (LESS'te `~/.config/less/config.ghostty` üstüne), oturum başına bir kez okunur, Cmd+/− yakınlaştırması hesaba girmez. pty'de doğrulandı. |
+| 97 | **Variables tablo görünümü** (`datasource.grid.render`, `Name │ Value │ Type`); liste elemanları `[i]`; `e` değer, `n`/Del null, `d` eleman sil, `a` eleman ekle, `K` tam değer | DB'deki gibi bekleyen değişiklik + commit yok: debug durumu canlı, değişiklik hemen uygulanır. Silme/ekleme `evaluate` (repl bağlamı) ifadesiyle, dil adaptör türünden: JS `splice`/`delete`/`push`, Java `remove`/`add`, Python `pop`/`append`; Java dizisi gibi sabit yapılarda hata adaptörden. Silme/eklemede o listenin `overrides`'ı silinir (dizinler kayar). Node ile uçtan uca. Satır imleci `list_cursor` (hücre gezinmesi yok). |
+| 98 | **Notlar: Cmd+N ortada yüzen pencere** (`lua/notes`), tab'lı Markdown notlar `.less/notes/` (klasörde `.gitignore` = `*`); yeni LESS penceresi **Cmd+Shift+N**'ye taşındı (#53 değişti; Files panelinde Cmd+N hâlâ yeni dosya) | Tab çubuğu winbar (`NotesClick/Close/New`), sıra oluşturulma zamanı, proje başına son not hatırlanır (bellekte). Kayıt konsol gibi `noautocmd update`. Yüzen olmayan pencereye geçince kapanır. Ghostty `super+shift+n=csi:110;10u` → `<D-N>`; LESS'te `make app` + `make install`. |
+| 99 | **Her proje / workspace son panel düzeniyle açılır** (`autorestore/layout.lua`): açık paneller (files, git, claude, terminal, db, runner, git_history) + boyutlar (sol genişlik, sağ sütun genişliği, AI/terminal oranı, şerit yüksekliği); kayıtlı düzen yoksa #81 varsayılanı | Kayıt `stdpath("state")/layouts.json` (testte `NVIM_LAYOUTS_FILE`), anahtar cwd (autorestore'un `record_for` + `ignore` koşulları). Yakalama `WinNew/WinClosed/WinResized/BufWinEnter` sonrası `vim.schedule`; `schedule_layout` `pause()` eder, `apply_layout` bitince `resume()` — ayrıca yakalama anında cwd değiştiyse atlanır (workspace geçişinde PersistenceSavePre neo-tree'yi kapatıyor, eski düzen yeni projeye yazılırdı). Çıkışta (`v:exiting`) yakalanmaz. Kayıtlı düzen tam uygulanır: listede olmayan açık paneller kapanır (Claude/terminal gizlenir, süreç ölmez). Debug Variables kaydedilmez. pty'de iki açılış ve proje geçişiyle denendi. |
+| 100 | ~~Sol araç çubuğu (IntelliJ tool window bar)~~ — denendi, **kaldırıldı** | Panel başına çizgi karakterli yuvarlak kutu + Nerd Font ikonu terminalde düzgün görünmedi (ikon hizası, kutu görünümü); kullanıcı istemedi. Tekrar önerme. |
+| 87 | **Durum satırı düzeltmesi**: sysinfo CPU metnindeki `%` kaçışsızdı (`69% `) → lualine her yenilemede E539 verip durum satırını hiç çizemiyordu | Bileşen çıktısında `%` her zaman `%%` yazılmalı. |
 | 44 | **Görsel görüntüleme** (snacks.image, Ghostty kitty graphics) | png/jpg/gif/bmp/webp/tiff/heic/avif/icns/pdf ilk sayfa kod penceresinde; markdown'da satır içi; diğer dillerde imleç üstünde yüzen önizleme. Önizleme tab'ı kurallarına uyar. |
 
 ## Açık konular / öneriler
@@ -565,7 +593,7 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
 - PostgreSQL istemcisi (`psql`) kurulu değil; Postgres kullanılacaksa `brew install libpq` (PATH'e zaten ekli).
 - Database paneli: yalnız SQLite ile uçtan uca test edildi (psql/mysql/redis-cli/mongosh kurulu değil; o türlerin
   komutları denenmedi). Ghostty'de görsel (ikonlar, form, conceal'lı parola) ve Cmd+Enter canlı denenmedi. Veri tab'ında
-  hücre düzenleme yok (yalnız görüntüle/kopyala); "yapı düzenleme" = kolon listesi + ALTER şablonları. Bağlantı testi
+  satır silme yok (düzenleme #88); "yapı düzenleme" = kolon listesi + ALTER şablonları. Bağlantı testi
   ayrı bir düğme değil: kaydedince tablolar yüklenir, hata satırda görünür. Redis'te ilk 500 anahtar.
   Konsolda tek blokta birden çok SELECT varsa sonuçlar tek tabloya karışır (psql/mysql çıktısı art arda gelir).
 - Workspace branch göstergesi checkout sonrası ancak neo-tree yeniden çizilince güncellenir.
@@ -608,7 +636,7 @@ Kullanıcı onayı bekleyen özellik önerileri: [ONERILER.md](ONERILER.md).
   zsh gerekir, `:Font` reload ve `lessed` yok. CI'da stylua yok (biçim doğrulanmamış kod CI'ı kırabilirdi).
 - Şerit/koruma: yeni uzun mesaj Run/Git History'yi gizler (tek araç kuralı). Kod penceresi koruması mapping içinden
   `<Cmd>q<CR>`, `:bd`/`:only` ve Lua `nvim_win_close` yollarını kapsamaz. `restore` içinde hata olursa `winfixwidth` o turda
-  kapalı kalabilir. Sağ sütuna %50 üst sınır yok. Gerçek temiz ilk açılış bu değişiklikten sonra çalıştırılmadı.
+  kapalı kalabilir. Gerçek temiz ilk açılış bu değişiklikten sonra çalıştırılmadı.
 - Görseller: Ghostty/LESS.app'te gözle bakılmadı (pty'de kitty dizileri doğrulandı); mp4/mov (ilk kare) ve heic
   denenmedi; noice şeridi ve tabpage geçişinde ayrıca test edilmedi; LaTeX/Mermaid ve css/scss/vue/svelte parser'ları
   yok (o dillerde görsel yok); her `:Files` aç-kapada görsel yeniden çizilir.

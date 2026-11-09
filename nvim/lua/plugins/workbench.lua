@@ -58,4 +58,15 @@ return {
       },
     },
   },
+
+  -- which-key `v` ile görsel moda girince menüyü hemen açmasın (V ve Ctrl+V'deki gibi): menü ancak görsel modda bir
+  -- önek tuşuna (ör. Space) basınca çıkar
+  {
+    "folke/which-key.nvim",
+    opts = {
+      defer = function(ctx)
+        return ctx.mode == "v" or ctx.mode == "V" or ctx.mode == "<C-V>"
+      end,
+    },
+  },
 }

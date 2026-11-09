@@ -22,3 +22,6 @@ if vim.env.LESS_APP == "1" then
   vim.opt.title = true
   vim.opt.titlestring = "%{fnamemodify(getcwd(), ':t')}"
 end
+
+-- Neovim'in ftplugin/sql.vim'i insert modda <Left>/<Right>'ı sqlcomplete'e bağlıyor (ok tuşları çalışmıyordu)
+vim.g.omni_sql_no_default_maps = 1

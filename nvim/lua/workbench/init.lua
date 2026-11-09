@@ -88,10 +88,17 @@ function M.setup()
       end
     end,
   })
-  vim.api.nvim_create_autocmd({ "BufWinEnter", "TermOpen", "WinNew", "WinResized" }, {
+  vim.api.nvim_create_autocmd({ "BufWinEnter", "TermOpen", "WinNew", "WinResized", "VimResized" }, {
     group = group,
     callback = function()
       schedule_arrange()
+    end,
+  })
+  -- WinResized ekran çizilmeden önce gelir: sınırı burada eşzamanlı uygulamak fareyle sürüklerken titremeyi önler
+  vim.api.nvim_create_autocmd("WinResized", {
+    group = group,
+    callback = function()
+      M.clamp()
     end,
   })
   vim.api.nvim_create_autocmd("BufWinEnter", {
@@ -505,7 +512,99 @@ local function save_sizes(right, strip)
   end
 end
 
+--- Panel boyut sınırları: sabit sütun/satır sayısı ya da (1'den küçükse) ekran oranı; `max_px` ekran noktası
+--- (macOS point) cinsinden üst sınır, font boyutundan sütuna çevrilir. `vim.g.workbench_limits` ile tek tek ezilebilir.
+local LIMITS = {
+  left = { min = 20, max = 0.3, max_px = 610 }, -- Files, Git (sol paneller), genişlik
+  right = { min = 30, max = 0.5, max_px = 800 }, -- AI, terminal, Database (sağ sütun), genişlik
+  bottom = { min = 6, max = 0.5 }, -- Run, Git History, Debug (alt şerit), yükseklik
+}
+
+local cell_points
+
+--- Bir terminal hücresinin genişliği (point): Ghostty `font-size` × 0.6 (yaygın monospace fontların karakter
+--- genişliği oranı). Font boyutu son geçerli config'ten: Ghostty config'i, LESS'te üstüne `~/.config/less/config.ghostty`.
+---@return number
+local function cell_width_points()
+  if cell_points then
+    return cell_points
+  end
+  local size = 13
+  local files = { vim.fn.expand("~/.config/ghostty/config.ghostty") }
+  if vim.env.LESS_APP == "1" then
+    table.insert(files, vim.fn.expand("~/.config/less/config.ghostty"))
+  end
+  for _, file in ipairs(files) do
+    for _, line in ipairs(vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {}) do
+      local v = tonumber(line:match("^%s*font%-size%s*=%s*([%d%.]+)"))
+      size = v or size
+    end
+  end
+  cell_points = size * 0.6
+  return cell_points
+end
+
+--- Sınırı sütun/satır sayısına çevirir.
+---@param kind "left"|"right"|"bottom"
+---@return integer min, integer max
+local function limits(kind)
+  local l = vim.tbl_extend("force", LIMITS[kind], (vim.g.workbench_limits or {})[kind] or {})
+  local total = kind == "bottom" and vim.o.lines or vim.o.columns
+  local function abs(v)
+    return v < 1 and math.floor(total * v) or v
+  end
+  local min, max = abs(l.min), abs(l.max)
+  if l.max_px then
+    max = math.min(max, math.floor(l.max_px / cell_width_points()))
+  end
+  return min, math.max(min, max)
+end
+
+--- Sol panelleri, sağ sütunu ve alt şeridi sınırlar içine çeker (elle sürüklenmiş ya da hatırlanmış boyutlar dahil).
+--- Sol panel = sağ sütun ve şerit dışında `winfixwidth` taşıyan, kod penceresi olmayan pencere.
+---@param right integer[]
+---@param strip integer[]
+local function clamp_sizes(right, strip)
+  local api = vim.api
+  local function clamp(win, kind, get, set)
+    local min, max = limits(kind)
+    local v = get(win)
+    if v < min or v > max then
+      pcall(set, win, math.max(min, math.min(max, v)))
+    end
+  end
+  if #right > 0 then
+    clamp(right[1], "right", api.nvim_win_get_width, api.nvim_win_set_width)
+  end
+  if #strip > 0 then
+    clamp(strip[1], "bottom", api.nvim_win_get_height, api.nvim_win_set_height)
+  end
+  local skip = {}
+  for _, w in ipairs(vim.list_extend(vim.list_extend({}, right), strip)) do
+    skip[w] = true
+  end
+  for _, w in ipairs(api.nvim_tabpage_list_wins(0)) do
+    local left_panel = not skip[w] and api.nvim_win_get_config(w).relative == ""
+    if left_panel and vim.wo[w].winfixwidth and not is_code_win(w) then
+      clamp(w, "left", api.nvim_win_get_width, api.nvim_win_set_width)
+    end
+  end
+end
+
 local arranging = false
+
+--- Panelleri boyut sınırlarına çeker (yerleşime dokunmadan). Fareyle sürüklemede her `WinResized`'da çağrılır.
+function M.clamp()
+  if arranging then
+    return
+  end
+  local right = vim.tbl_filter(function(w)
+    return w ~= nil
+  end, { claude_win(), shell_win(), db_win() })
+  arranging = true
+  pcall(clamp_sizes, right, M.bottom_wins())
+  arranging = false
+end
 
 --- Pencere düzenini zorlar: sağ sütun (üstte Claude, altta terminal) her zaman tam boy en sağda; alt şerit
 --- (Run / Git geçmişi + loglar) sağ sütunun solunda ekranın altında, sol panellerin (Files, Database ve sonradan
@@ -522,6 +621,9 @@ function M.arrange_layout()
   end, { claude_win(), shell_win(), db_win() })
   local strip = M.bottom_wins()
   if layout_ok(right, strip) then
+    arranging = true
+    pcall(clamp_sizes, right, strip)
+    arranging = false
     remember_sizes(right, strip)
     return
   end
@@ -542,6 +644,7 @@ function M.arrange_layout()
       end
     end
     restore()
+    clamp_sizes(right, strip)
     remember_sizes(right, strip)
   end)
   if vim.api.nvim_win_is_valid(cur) then
@@ -707,15 +810,26 @@ end
 ---@return fun()
 local function exclusive_bottom(open)
   return function()
+    if package.loaded["runner"] then
+      package.loaded["runner"].remember()
+    end
     hide_strip()
     open()
   end
 end
 
+--- Run panelini şeritteki diğer araçları gizleyerek açar (son hali geri gelir).
+---@param opts? { debug?: boolean }
+function M.open_runner(opts)
+  exclusive_bottom(function()
+    require("runner").open_panel(opts)
+  end)()
+end
+
 --- Cmd+6: Run paneli (Spring Boot uygulamaları, Node script'leri).
 function M.runner()
   local runner = require("runner")
-  panel(runner.find_panel, exclusive_bottom(runner.open_panel), runner.close_panel)
+  panel(runner.find_panel, M.open_runner, runner.close_panel)
 end
 
 --- Cmd+7: Git History paneli (alt şerit).
@@ -724,10 +838,13 @@ function M.git_history()
   panel(git.find_panel, exclusive_bottom(git.open_panel), git.close_panel)
 end
 
---- `Space d u`: Debug paneli (dap-ui Variables / Frames / REPL, alt şerit).
+--- `Space d u`: Run panelinde logların sağındaki Variables bölümü (Run paneli kapalıysa onu da açar).
 function M.debug()
   local ui = require("debugui")
-  panel(ui.find_panel, exclusive_bottom(ui.open_panel), ui.close_panel)
+  panel(ui.find_panel, function()
+    ui.open_panel()
+    focus(ui.find_panel())
+  end, ui.close_panel)
 end
 
 --- Cmd+0: Git paneli (commit'lenmemiş değişiklikler, stage/unstage). Files ve DB gibi solda tam boy açılır;

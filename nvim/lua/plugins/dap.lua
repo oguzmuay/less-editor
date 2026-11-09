@@ -1,7 +1,7 @@
 --- nvim-dap-ui kendi split düzeniyle açılmaz (LazyVim varsayılanı debug başlayınca açıyordu): sol/alt split'leri
 --- workbench yerleşimine uymuyor, `arrange_layout` onları her olayda taşıyıp sağ sütunu (Claude) titretiyordu.
 --- Kesme noktası dinleyicisi nvim-dap yüklenince kurulur (dap-ui o ana kadar yüklenmemiş olabilir).
---- Elemanlar `debugui` modülüyle alt şeritte gösterilir: `Space d u` aç/odakla/kapat, kesme noktasında kendiliğinden.
+--- Variables `debugui` modülüyle Run panelinde logların sağında: `Space d u` aç/odakla/kapat, kesme noktasında kendiliğinden.
 return {
   {
     "rcarriga/nvim-dap-ui",
@@ -22,7 +22,7 @@ return {
         function()
           require("workbench").debug()
         end,
-        desc = "Debug Panel",
+        desc = "Debug Variables",
       },
     },
     config = function(_, opts)

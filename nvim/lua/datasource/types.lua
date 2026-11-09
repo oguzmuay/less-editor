@@ -71,18 +71,26 @@ local function split(name)
   return schema, tbl or name
 end
 
+--- Türün lehçesinde tırnaklanmış tek tanımlayıcı (kolon adı gibi; nokta bölünmez).
+---@param id string
+---@param s string
+---@return string
+function M.quote_ident(id, s)
+  if id == "mysql" or id == "mariadb" then
+    return "`" .. s:gsub("`", "``") .. "`"
+  elseif id == "sqlserver" then
+    return "[" .. s:gsub("%]", "]]") .. "]"
+  end
+  return '"' .. s:gsub('"', '""') .. '"'
+end
+
 --- Türün lehçesinde tırnaklanmış tablo adı.
 ---@param id string
 ---@param name string
 function M.quote(id, name)
   local schema, tbl = split(name)
   local function q(s)
-    if id == "mysql" or id == "mariadb" then
-      return "`" .. s:gsub("`", "``") .. "`"
-    elseif id == "sqlserver" then
-      return "[" .. s:gsub("%]", "]]") .. "]"
-    end
-    return '"' .. s:gsub('"', '""') .. '"'
+    return M.quote_ident(id, s)
   end
   if id == "sqlite" or not schema then
     return q(name)
@@ -102,7 +110,7 @@ SYSTEM.mariadb = SYSTEM.mysql
 ---@param url string
 ---@return string[]
 function M.list_cmd(id, url)
-  local q = "SELECT table_schema, table_name FROM information_schema.tables WHERE %s ORDER BY 1, 2"
+  local q = "SELECT table_schema, table_name FROM information_schema.tables WHERE %s ORDER BY table_schema, table_name"
   if id == "postgresql" then
     return vim.list_extend(dispatch(url, "interactive"), { "-At", "-F", ".", "-c", q:format(SYSTEM[id]) })
   elseif id == "mysql" or id == "mariadb" then
@@ -266,6 +274,67 @@ function M.edit_template(id, name)
     "",
     ("CREATE INDEX idx_%s_column ON %s (column_name);"):format((name:gsub("%W", "_")), q),
   }
+end
+
+--- Hücre değerinin SQL sabiti (`nil` = NULL). Sayılar da dize olarak yazılır, veritabanı kolon türüne çevirir.
+--- MySQL/MariaDB'de ters bölü de kaçırılır (varsayılan `sql_mode`'da kaçış karakteri), SQL Server'da `N'…'`.
+---@param id string
+---@param v string?
+---@return string
+function M.value(id, v)
+  if v == nil then
+    return "NULL"
+  end
+  local s = v:gsub("'", "''")
+  if id == "mysql" or id == "mariadb" then
+    s = s:gsub("\\", "\\\\")
+  end
+  return (id == "sqlserver" and "N'" or "'") .. s .. "'"
+end
+
+--- İfadeleri tek transaction'da çalışacak metne sarar; istemciler ilk hatada durur (psql ON_ERROR_STOP, mysql batch,
+--- sqlite -bail, sqlcmd -b + XACT_ABORT), COMMIT'e ulaşılmadan bağlantı kapanınca değişiklikler geri alınır.
+---@param id string
+---@param statements string[]
+---@return string
+function M.transaction(id, statements)
+  local body = table.concat(statements, "\n")
+  if id == "sqlserver" then
+    return "SET XACT_ABORT ON;\nBEGIN TRANSACTION;\n" .. body .. "\nCOMMIT TRANSACTION;"
+  elseif id == "mysql" or id == "mariadb" then
+    return "START TRANSACTION;\n" .. body .. "\nCOMMIT;"
+  end
+  return "BEGIN;\n" .. body .. "\nCOMMIT;"
+end
+
+--- Tablonun birincil anahtar kolonlarını (her satırda bir ad, anahtar sırasıyla) döndüren komut; SQL dışı türlerde nil.
+---@param id string
+---@param url string
+---@param name string
+---@return string[]?
+function M.pk_cmd(id, url, name)
+  local schema, tbl = split(name)
+  if id == "postgresql" then
+    local q = "SELECT a.attname FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid "
+      .. "AND a.attnum = ANY(i.indkey) WHERE i.indisprimary AND i.indrelid = %s::regclass "
+      .. "ORDER BY array_position(i.indkey::int2[], a.attnum)"
+    return vim.list_extend(dispatch(url, "interactive"), { "-At", "-c", q:format(lit(M.quote(id, name))) })
+  elseif id == "mysql" or id == "mariadb" then
+    local q = "SELECT column_name FROM information_schema.key_column_usage WHERE constraint_name = 'PRIMARY' "
+      .. "AND table_schema = %s AND table_name = %s ORDER BY ordinal_position"
+    return vim.list_extend(dispatch(url, "interactive"), {
+      "-N", "-B", "-e", q:format(schema and lit(schema) or "DATABASE()", lit(tbl)) })
+  elseif id == "sqlserver" then
+    local q = "SET NOCOUNT ON; SELECT k.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS c "
+      .. "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON k.CONSTRAINT_NAME = c.CONSTRAINT_NAME "
+      .. "AND k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME "
+      .. "WHERE c.CONSTRAINT_TYPE = 'PRIMARY KEY' AND c.TABLE_NAME = %s%s ORDER BY k.ORDINAL_POSITION"
+    return vim.list_extend(dispatch(url, "interactive"), {
+      "-h", "-1", "-W", "-Q", q:format(lit(tbl), schema and (" AND c.TABLE_SCHEMA = " .. lit(schema)) or "") })
+  elseif id == "sqlite" then
+    return vim.list_extend(dispatch(url, "command"), {
+      "-noheader", ("SELECT name FROM pragma_table_info(%s) WHERE pk > 0 ORDER BY pk"):format(lit(name)) })
+  end
 end
 
 M.LIMIT = 200

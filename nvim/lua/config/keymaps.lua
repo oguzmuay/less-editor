@@ -104,10 +104,20 @@ for _, lhs in ipairs({ "<S-D-Right>", "<M-D-Right>" }) do
   end, { desc = "Next tab" })
 end
 -- Cmd+P: editör tab'ını pinle / pin'i kaldır (panelden basılırsa son kod penceresindeki tab)
-map(nt, "<D-p>", wb.toggle_pin, { desc = "Pin / unpin editor tab" })
--- Cmd+N: Files panelinde yeni dosya (neo-tree eşlemesi, plugins/workbench.lua); başka yerde yeni LESS penceresi
--- (Ghostty'nin Cmd+N'i Neovim'e verildiği için new_window AppleScript ile istenir)
-map(nt, "<D-n>", function()
+-- Markdown dosyasında (odak koddayken) Cmd+P önizlemeyi aç/kapa; başka yerde tab pin'i
+map(nt, "<D-p>", function()
+  if vim.bo.filetype == "markdown" and vim.bo.buftype == "" and package.loaded["render-markdown"] then
+    require("render-markdown").buf_toggle()
+  else
+    wb.toggle_pin()
+  end
+end, { desc = "Pin / unpin editor tab (Markdown: toggle preview)" })
+-- Cmd+N: Files panelinde yeni dosya (neo-tree eşlemesi, plugins/workbench.lua); başka yerde notlar penceresi
+map({ "n", "i", "v", "t" }, "<D-n>", function()
+  require("notes").toggle()
+end, { desc = "Notes" })
+-- Cmd+Shift+N: yeni LESS penceresi (Ghostty'nin Cmd+N'i Neovim'e verildiği için new_window AppleScript ile istenir)
+map(nt, "<D-N>", function()
   local app = vim.env.LESS_APP == "1" and "LESS" or "Ghostty"
   local script = ('tell application "%s" to perform action "new_window" on focused terminal of selected tab of front window')
     :format(app)
@@ -131,3 +141,33 @@ map("i", "<M-f>", "<C-Right>", { desc = "Word forward" })
 -- LESS markası: LazyVim'in "Lazy" / "LazyVim Changelog" girdileri which-key'de görünmesin
 map("n", "<leader>l", "<cmd>Lazy<cr>", { desc = "Plugins" })
 pcall(vim.keymap.del, "n", "<leader>L")
+
+-- Debug: IntelliJ tuşları ve satır numarası oluğuna tıklayınca breakpoint
+local function dap_call(fn)
+  return function()
+    require("dap")[fn]()
+  end
+end
+map("n", "<F8>", dap_call("step_over"), { desc = "Step Over" })
+map("n", "<F7>", dap_call("step_into"), { desc = "Step Into" })
+map("n", "<S-F8>", dap_call("step_out"), { desc = "Step Out" })
+map("n", "<F20>", dap_call("step_out"), { desc = "Step Out" }) -- bazı terminaller Shift+F8'i F20 olarak gönderir
+map("n", "<F9>", dap_call("continue"), { desc = "Resume / Start Debug" })
+map({ "n", "i" }, "<D-F8>", dap_call("toggle_breakpoint"), { desc = "Toggle Breakpoint" })
+
+--- Kod penceresinin oluğuna (satır numarası / işaret sütunu) tıklama o satırda breakpoint koyar/kaldırır; başka her
+--- yerde normal tıklama. Expr eşlemesinde pencere değiştirilemediği için iş `vim.schedule` ile yapılır.
+map("n", "<LeftMouse>", function()
+  local pos = vim.fn.getmousepos()
+  local info = pos.winid ~= 0 and vim.fn.getwininfo(pos.winid)[1]
+  local ok, problems = pcall(require, "problems")
+  if not (info and pos.line > 0 and pos.wincol <= info.textoff and ok and problems.is_code_window(pos.winid)) then
+    return "<LeftMouse>"
+  end
+  vim.schedule(function()
+    vim.api.nvim_set_current_win(pos.winid)
+    vim.api.nvim_win_set_cursor(pos.winid, { pos.line, 0 })
+    require("dap").toggle_breakpoint()
+  end)
+  return ""
+end, { expr = true, desc = "Toggle breakpoint (gutter click)" })

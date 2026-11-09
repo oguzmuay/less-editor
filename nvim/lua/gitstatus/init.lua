@@ -293,15 +293,19 @@ end
 
 local open_file
 
---- Dosyanın diff'ini kod editöründe tab olarak açar: Staged → index ↔ HEAD, diğerleri çalışma ağacı ↔ index.
---- `gitdiff` modülü yoksa (ya da conflict ise) dosyanın kendisi açılır.
+--- Dosyanın farkını kod alanında açar (`gitcompare`): conflict → üç bölmeli merge ekranı; çalışma ağacında
+--- duran dosya → HEAD ↔ çalışma ağacı yan yana (değişiklik bazında rollback). Silinmiş dosya yan yana
+--- gösterilemediği için unified diff tab'ı (`gitdiff`): Staged → index ↔ HEAD, diğerleri çalışma ağacı ↔ index.
 ---@param e GitStatusEntry
 local function show_diff(e)
-  local ok, gitdiff = pcall(require, "gitdiff")
-  if not ok or e.section == "conflicts" then
-    return open_file(e, true)
+  local compare = require("gitcompare")
+  if e.section == "conflicts" then
+    return compare.merge({ repo = e.repo, path = e.path })
   end
-  gitdiff.open({ path = e.repo .. "/" .. e.path, staged = e.section == "staged", cwd = e.repo })
+  if vim.uv.fs_stat(e.repo .. "/" .. e.path) then
+    return compare.diff({ repo = e.repo, path = e.path })
+  end
+  require("gitdiff").open({ path = e.repo .. "/" .. e.path, staged = e.section == "staged", cwd = e.repo })
 end
 
 --- Dosyayı son kullanılan kod penceresinde açar. Çalışma ağacında silinmişse diff'i gösterir.
@@ -395,10 +399,12 @@ local function set_open(entry, open)
   M.refresh()
 end
 
---- Enter / çift tık: dosyayı açar, bölüm başlığını açıp kapatır.
+--- Enter / çift tık: dosyayı açar (conflict'te merge ekranı), bölüm başlığını açıp kapatır.
 ---@param entry table?
 local function activate(entry)
-  if entry and entry.kind == "file" then
+  if entry and entry.kind == "file" and entry.entry.section == "conflicts" then
+    show_diff(entry.entry)
+  elseif entry and entry.kind == "file" then
     open_file(entry.entry)
   elseif entry and entry.kind == "section" then
     set_open(entry)

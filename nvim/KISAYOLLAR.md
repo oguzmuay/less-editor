@@ -38,7 +38,8 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 | **Cmd+2** | `Space 2` | Kod — panelden geçince en baştaki **pinli** tab, pin yoksa son kullanılan editör penceresi |
 | **Cmd+3** | `Space 3` | AI paneli (Claude, Codex, Gemini, Ollama) — boşsa son seçtiğin AI açılır |
 | **Cmd+4** | `Space 4` | Terminal |
-| **Cmd+N** | — | Files panelinde yeni dosya, başka yerde yeni LESS penceresi |
+| **Cmd+N** | — | Notlar penceresi (ekranın ortasında; Files panelinde yeni dosya) |
+| **Cmd+Shift+N** | — | Yeni LESS penceresi |
 | **Cmd+5** | `Space 5` | Database (sağ sütunda, Claude/terminal yerine) |
 | **Cmd+6** | `Space 6` | Run (Spring Boot + Node script'leri) |
 | **Cmd+7** | `Space 7` | Git History (commit geçmişi, alt şerit) |
@@ -51,6 +52,7 @@ Her tuş: panel kapalıysa açar · açık ama odakta değilse odaklar · zaten 
 |---|---|---|
 | **`:Files`** | Dosya gezgini | Aç / kapat |
 | **`:UIReset`** / **Cmd+Shift+0** | Tüm paneller | Genişlik/yükseklikleri varsayılana döndürür (AI sütunu kodu kapatınca) |
+| (otomatik) | Tüm paneller | Boyut sınırları: sol paneller 20 sütun – ekranın %30'u ve en çok 610 pt, sağ sütun 30 sütun – %50 ve en çok 800 pt, alt şerit 6 – %50 satır (pt → sütun: font boyutu × 0,6; 14 pt fontta 610 pt ≈ 72, 800 pt ≈ 95 sütun) (`vim.g.workbench_limits` ile değişir) |
 | **`:Code`** | Kod penceresi | Koda odaklanır (toggle değil) |
 | **`:AI`** (ya da `:Claude`) | AI paneli | Aç / kapat · `:AI new` seçici · `:AI codex` / `gemini` / `ollama` / `claude` doğrudan · `:AI account` Claude hesabı |
 | **`:Terminal`** | Terminal | Aç / kapat |
@@ -72,6 +74,7 @@ Tab ile tamamlanır (ör. `:Gi` + Tab → `Git`, `GitBlame`).
 | **Cmd+W** | Tab'ı (buffer) kapat |
 | **Cmd+Q** | Yalnız bu LESS penceresini kapat (kaydedilmemiş dosya varsa sorar); tüm LESS: menü LESS > Quit LESS |
 | **Cmd+P** (veya `Space b p`) | Tab'ı pinle / pin'i kaldır (📌, başa geçer; oturumla kalır). Panelden basılırsa son kod tab'ına uygulanır |
+| **Cmd+P** (Markdown dosyasındayken) | Markdown önizlemesini aç / kapat (buffer içinde; açık gelir). Pin için `Space b p` |
 | `Space b P` | Sabitlenmemiş tüm tabları kapat |
 | `Space b o` | Diğer tüm tabları kapat |
 | `Space b l` / `Space b r` | Soldaki / sağdaki tabları kapat |
@@ -123,7 +126,7 @@ Listelerde mouse ile çift tık seçer.
 | **Cmd+Shift+F** | Dosya içeriğinde ara (tüm repo) |
 | **Cmd+E** | Son açılan dosyalar |
 | `:Claude account` | Claude hesabı seç ya da ekle (yeni oturumlar o hesapla açılır; açık oturumlar kendi hesabında kalır) |
-| Menü: **File > Open Recent** / **Open Folder…** | Son projeyi / workspace'i ya da bir klasörü yeni LESS penceresinde aç · **File > New Window** (ya da Cmd+N) dashboard'la açılır (`p` ile proje seç) |
+| Menü: **File > Open Recent** / **Open Folder…** | Son projeyi / workspace'i ya da bir klasörü yeni LESS penceresinde aç · **File > New Window** (ya da Cmd+Shift+N) dashboard'la açılır (`p` ile proje seç) |
 | **Cmd+K** / `:Shortcuts` | Kısayol ara (bu dosyadaki tüm kısayollar; ör. "coklu satir", "kopyala") |
 | `Space Space` | Dosya ara (sadece bulunduğun alt proje) |
 | `Space /` | İçerikte ara (sadece bulunduğun alt proje) |
@@ -294,7 +297,7 @@ Repo kökündeki Spring Boot uygulamalarını ve tüm `package.json` script'leri
 | `l` | Logu panelin sağında aç (başlatınca otomatik açılır) |
 | `p` | Spring profili seç |
 | `R` | Yeniden tara |
-| `q` | Paneli kapat (çalışanlar arka planda devam eder) |
+| `q` | Paneli kapat (çalışanlar arka planda devam eder). Tekrar açınca son hali gelir: açık olan log ve (debug sürüyorsa) Variables |
 | `Space j` (her yerden) | Önce öğe, sonra eylem seç |
 
 Butonlar ve sağ tık panel odakta olmasa da çalışır.
@@ -350,8 +353,8 @@ Kaydetme, odak dönüşü ve dışarıdan (ör. Claude) dosya değişikliklerind
 
 | Tuş / Mouse | İş |
 |---|---|
-| Enter / çift tık | Dosyayı önizleme tab'ında aç (tekrar Enter → normal tab; silinmişse diff) · bölüm başlığında aç-kapat |
-| `o` / `d` | Dosyayı aç / diff'ini tab olarak aç |
+| Enter / çift tık | Dosyayı önizleme tab'ında aç (tekrar Enter → normal tab; silinmişse diff; conflict'te merge ekranı) · bölüm başlığında aç-kapat |
+| `o` / `d` | Dosyayı aç / yan yana diff (conflict'te merge ekranı) |
 | `s` / `u` | Stage / unstage (dosya, bölüm ya da repo başlığında hepsi) |
 | `S` / `U` | Repodaki her şeyi stage / unstage |
 | `X` | Değişikliği geri al (discard) / untracked dosyayı sil — **her zaman onay sorar** |
@@ -360,6 +363,32 @@ Kaydetme, odak dönüşü ve dışarıdan (ör. Claude) dosya değişikliklerind
 | `R` / `q` | Yenile / kapat |
 
 Commit için: `Space g g` (Lazygit) ya da terminal.
+
+### Yan yana diff (Git paneli `d`)
+
+Kod alanında solda **HEAD** (salt okunur), sağda dosyanın kendisi (düzenlenebilir). Değişikliğin ilk satırında oluğa ⟲.
+
+| Tuş / Mouse | İş |
+|---|---|
+| ⟲'ye tık / `Space r` | Bu değişikliği geri al (HEAD'deki haline); `u` ile geri gelir, kaydedince (Cmd+S) geçerli |
+| Winbar **⟲ Rollback all** | Tüm değişiklikleri geri al (buffer'da) |
+| `]c` / `[c` | Sonraki / önceki değişiklik |
+| `q` / Winbar **✕ Close** | Kapat (başka dosyaya geçmek de kapatır) |
+
+### Merge ekranı (Git panelinde conflict'li dosya)
+
+Solda bizim taraf (**« Left**), ortada sonuç (dosyanın kendisi, conflict işaretleriyle), sağda gelen taraf (**Right »**).
+Her conflict bloğunun başında butonlar: **« Accept left │ Accept right » │ Both**.
+
+| Tuş / Mouse | İş |
+|---|---|
+| Butona tık / `Space m l` / `Space m r` / `Space m b` | Bu bloğu sol / sağ / ikisi (önce sol) ile çöz (imleçteki ya da altındaki ilk blok) |
+| Winbar **« Accept all left** / **Accept all right »** (`Space m L` / `Space m R`) | **Yalnız henüz çözülmemiş** blokları o tarafla çöz; tek tek çözdüklerin değişmez |
+| `]x` / `[x` | Sonraki / önceki conflict |
+| Winbar **✓ Save & mark resolved** (`Space m m`) | Blok kalmayınca: kaydet + `git add` (çözüldü) + kapat |
+| `q` / Winbar **✕ Close** | Kapat (değişiklikler buffer'da kalır) |
+
+Bloğu elle de düzenleyebilirsin; işaretler silinince blok çözülmüş sayılır.
 
 ### Görseller
 
@@ -400,27 +429,65 @@ Gerekli istemci kurulu değilse panel sorar: **Install** derseniz Homebrew ile k
 |---|---|
 | Enter / çift tık / `K` | Hücrenin tam değeri (uzun metin `…` ile kesilir; JSON `jq` varsa girintili) |
 | `y` | Hücreyi panoya kopyala |
-| `R` · `q` | Yenile · kapat |
+| `e` / `i` | Hücreyi düzenle (SQL tabloları; değişiklik hemen yazılmaz, sarı vurguyla bekler) |
+| `Del` | Hücreyi NULL yap (bekler) |
+| **Cmd+D** / `c` | Satırı kopyala → yeni satır (yeşil; birincil anahtar düzenlenmezse veritabanı üretir) |
+| `u` · `U` | İmleçteki değişikliği geri al (eklenen satırı sil) · tüm bekleyen değişiklikleri at |
+| **Cmd+S** / `:w` | Bekleyenleri commit et: üretilen SQL onay penceresinde (`y` / `n`), tek transaction; hata olursa hiçbiri yazılmaz |
+| `R` · `q` | Yenile (bekleyen değişiklik varsa sorar) · kapat |
 
 | Konsolda | İş |
 |---|---|
 | **Cmd+Enter** · `Space D` | İmleçteki ifade bloğunu (boş satırla ayrılan) ya da seçimi çalıştır; sonuç alt şeritte tablo (⏎ hücre, `y` kopyala, `q` kapat) |
+| — | Konsol kendiliğinden kaydedilir (kaydetme sorulmaz, biçimlendirici çalışmaz) |
 
 Bağlantılar `~/.local/share/…/datasource/connections.json`'da (yalnız kullanıcı okuyabilir, parola düz metin).
 Eski dadbod-ui bağlantıları ilk açılışta içe aktarılır (`jdbc:` öneki atılır). Proje bazlı bağlantılar: repo kökünde
 `.lazy.lua` içine `vim.g.dbs = { dev = "postgresql://…" }` (gitignore'a ekle; panelde düzenlenmez).
 
+## Notlar (Cmd+N)
+
+Ekranın ortasında yüzen pencere; her tab bir Markdown notu. Projede `.less/notes/*.md` (`.gitignore` ile git'e girmez),
+kendiliğinden kaydedilir. Markdown tabloları, başlıklar, checkbox'lar render-markdown ile çizilir.
+
+| Tuş | İş |
+|---|---|
+| **Cmd+N** · `:Notes` | Aç / kapat (son açık not gelir) |
+| **Cmd+T** · tab çubuğunda `+` | Yeni not (ad sorulur) |
+| **Cmd+Shift+←/→** · tab'a tık | Notlar arasında geç |
+| Tab'a çift tık / sağ tık · `:Notes rename` | Yeniden adlandır / sil menüsü |
+| Tab'daki `✕` · `:Notes delete` | Notu sil (onaylı) |
+| **Esc** / `q` (normal mod) · Cmd+W | Kapat (başka bir panele tıklamak da kapatır) |
+
 ## Debug ve test
 
 | Tuş | İş |
 |---|---|
-| `Space d b` | Breakpoint koy/kaldır |
-| `Space d c` | Debug başlat / devam et |
-| `Space d O` / `Space d i` / `Space d o` | Step over / into / out |
+| **Cmd+F8** · satır numarası oluğuna tık · `Space d b` | Breakpoint koy/kaldır |
+| `Space d B` | Koşullu breakpoint |
+| `Space d c` · **F9** | Debug başlat / devam et |
+| `Space d O` / `Space d i` / `Space d o` · **F8** / **F7** / **Shift+F8** | Step over / into / out |
 | `Space d C` | İmlece kadar çalıştır |
 | `Space d t` | Debug'ı bitir |
 | `Space d e` | İfade değerlendir |
-| `Space d u` | Debug paneli (alt şerit: Variables · Frames · REPL + kontrol çubuğu); breakpoint'te kendiliğinden açılır, debug bitince kapanır |
+| `Space d u` | Variables bölümü: Run panelinde logların sağında (winbar'da kontrol çubuğu); breakpoint'te kendiliğinden açılır, debug bitince kapanır, Run paneli yerinde kalır |
+
+| Debug panelinde (Variables) | İş |
+|---|---|
+| `e` / **F2** | Değişkene yeni değer ver (mevcut değerle dolu giriş; değer bir ifadedir: `42`, `'abc'`, `null`) |
+| `n` / **Del** | Değeri null yap (Python'da None) |
+| `d` | Elemanı listeden / nesneden sil (`[1]` → JS `splice`, Java `List.remove`, Python `pop`) |
+| `a` | Listeye eleman ekle (JS `push`, Java `add`, Python `append`) |
+| Enter / çift tık | Nesneyi / listeyi aç-kapa · yaprak değişkende değer düzenle |
+| `→` / `←` | Aç · kapa (kapalıysa üst öğeye çık) |
+| `K` · `y` · `R` | Tam değeri göster · kopyala · yenile |
+| `q` | Variables'ı gizle (Run paneli ve log kalır) |
+
+Tablo görünümü `Name | Value | Type` (Database veri tab'ı gibi); liste elemanları `[0]`, `[1]`… satırları. Değişiklik hemen programa uygulanır.
+Son duraktan beri değişen değerler sarı. Program devam ederken tablo soluk görünür.
+
+| Test | İş |
+|---|---|
 | `Space t r` | İmleçteki testi çalıştır |
 | `Space t t` | Dosyadaki testleri çalıştır |
 | `Space t T` | Tüm testler |
@@ -454,7 +521,7 @@ Eski dadbod-ui bağlantıları ilk açılışta içe aktarılır (`jdbc:` öneki
 
 - `nvim` (argümansız): bir projenin içindeysen o proje (kökü) açılır; değilsen **en son bıraktığın proje ya da
   workspace** açılır. Bulunamazsa açılış ekranı gelir.
-- Her proje / workspace açılışında **Files + editör + Claude + terminal** hazır gelir, odak editörde (pinli tab).
+- Her proje / workspace **son bıraktığın panel düzeniyle** açılır: hangi paneller açıktı (Files / Git, AI, Terminal, Database, Run / Git History) ve boyutları. Hiç açılmamış projede **Files + editör + Claude** (terminal Cmd+4 ile). Odak editörde (pinli tab). Çalışan süreçler geri gelmez, yalnız paneller açılır.
 - Açılış ekranını görmek için: `nvim +Dashboard` ya da `NVIM_NO_RESTORE=1 nvim`.
 - `nvim dosya.txt`, git commit editörü gibi açılışlar son projeyi değiştirmez.
 - Kapatmak: `vim.g.autorestore = false` (otomatik açma), `vim.g.default_layout = false` ya da `{ "files" }` (paneller).
@@ -504,7 +571,7 @@ yeniden iner (birkaç dakika). Kısayolların hepsi aynı.
 
 | Tuş | İş |
 |---|---|
-| **Cmd+Shift+T** / Cmd+N | Yeni Ghostty sekmesi / yeni pencere (Cmd+T ve Cmd+N Neovim üzerinden; Files panelinde Cmd+N yeni dosya) |
+| **Cmd+Shift+T** / Cmd+Shift+N | Yeni Ghostty sekmesi / yeni pencere (Cmd+T ve Cmd+Shift+N Neovim üzerinden) |
 | Ctrl+Tab / Ctrl+Shift+Tab | Ghostty sekmeleri arası geçiş |
 | Cmd+C / Cmd+V | Kopyala / yapıştır (mouse ile seçmek de kopyalar) |
 | Cmd+Shift+, | Ghostty ayarlarını yeniden yükle |

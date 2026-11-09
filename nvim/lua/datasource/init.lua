@@ -202,12 +202,48 @@ function M.get(name)
   end)
 end
 
+--- mysql/mariadb istemcisinin dadbod argv'sini düzeltir:
+--- - `-p<parola>` `MYSQL_PWD` ortam değişkenine taşınır. Argv'deki parola "Using a password on the command line
+---   interface can be insecure" uyarısını stderr'in ilk satırına basıyor (asıl hatayı gizliyordu) ve `ps`'te görünüyordu.
+--- - `-h localhost` + `-P <port>` varsa `--protocol=TCP` eklenir: istemci `localhost`'ta portu yok sayıp Unix soketine
+---   (`/tmp/mysql.sock`) gidiyordu; Docker'daki sunucuya bağlanılamıyordu.
+---@param cmd string[]
+---@param env? table<string, string>
+---@return string[] cmd, table<string, string>? env
+local function mysql_argv(cmd, env)
+  local exe = vim.fs.basename(cmd[1] or "")
+  if exe ~= "mysql" and exe ~= "mariadb" then
+    return cmd, env
+  end
+  local out, pwd, localhost, port = { cmd[1] }, nil, false, false
+  for i = 2, #cmd do
+    local arg = cmd[i]
+    if not pwd and arg:match("^%-p.") then
+      pwd = arg:sub(3)
+    else
+      out[#out + 1] = arg
+      localhost = localhost or (arg == "localhost" and cmd[i - 1] == "-h")
+      port = port or arg == "-P"
+    end
+  end
+  if localhost and port then
+    table.insert(out, 2, "--protocol=TCP")
+  end
+  if not pwd then
+    return out, env
+  end
+  env = vim.deepcopy(env or {})
+  env.MYSQL_PWD = pwd
+  return out, env
+end
+
 --- Komutu arka planda çalıştırır; `cb(ok, satırlar, hata)` ana döngüde çağrılır.
 ---@param cmd string[]
 ---@param cb fun(ok: boolean, lines: string[], err: string)
 ---@param opts? { stdin?: string, timeout?: integer, env?: table<string, string> } varsayılan zaman aşımı 20 sn
 local function run(cmd, cb, opts)
   opts = opts or {}
+  cmd, opts.env = mysql_argv(cmd, opts.env)
   local sys = { text = true, timeout = opts.timeout or 20000, stdin = opts.stdin, env = opts.env }
   local ok, err = pcall(vim.system, cmd, sys, vim.schedule_wrap(function(res)
     local out = vim.split(((res.stdout or ""):gsub("%s+$", "")), "\n")
@@ -483,6 +519,49 @@ local function open_console(conn, t)
   vim.cmd.stopinsert()
 end
 
+--- Konsol dosyasını kendiliğinden kaydeder: değişiklik (yazarken 300 ms gecikmeyle), insert'ten çıkış, tab'dan
+--- ayrılma ve odak kaybında sessizce yazılır, buffer "kaydedilmedi" durumunda kalmaz ve çıkışta sorulmaz.
+--- `noautocmd` ile yazılır: kaydetmede biçimlendirici (conform) konsolu yeniden düzenlemesin. Cmd+S de aynı yazmayı yapar.
+---@param buf integer
+local function autosave(buf)
+  if vim.b[buf].datasource_autosave then
+    return
+  end
+  vim.b[buf].datasource_autosave = true
+  local timer = assert(vim.uv.new_timer())
+  local function save()
+    timer:stop()
+    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified then
+      vim.api.nvim_buf_call(buf, function()
+        vim.cmd("silent! noautocmd update")
+      end)
+    end
+  end
+  vim.api.nvim_create_autocmd({ "TextChanged", "InsertLeave", "BufLeave", "BufHidden", "FocusLost", "QuitPre" }, {
+    group = group,
+    buffer = buf,
+    callback = save,
+  })
+  vim.api.nvim_create_autocmd("TextChangedI", {
+    group = group,
+    buffer = buf,
+    callback = function()
+      timer:stop()
+      timer:start(300, 0, vim.schedule_wrap(save))
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = group,
+    buffer = buf,
+    once = true,
+    callback = function()
+      timer:stop()
+      timer:close()
+    end,
+  })
+  vim.keymap.set({ "n", "i", "x" }, "<D-s>", save, { buffer = buf, desc = "Save console" })
+end
+
 ---@param conn DatasourceConn
 function M.open_console(conn)
   with_type(conn, function(t)
@@ -515,6 +594,8 @@ local function tab_buf(name, ft, render, editable)
     callback = function()
       if editable then
         vim.bo[buf].modified = false
+      elseif require("datasource.edit").active(buf) then
+        require("datasource.edit").commit(buf)
       else
         vim.notify("Data tabs are read-only", vim.log.levels.WARN)
       end
@@ -529,7 +610,9 @@ local function tab_buf(name, ft, render, editable)
   })
   if not editable then
     vim.keymap.set("n", "R", function()
-      render(buf)
+      require("datasource.edit").confirm_discard(buf, function()
+        render(buf)
+      end)
     end, { buffer = buf, nowait = true, desc = "Refresh" })
     vim.keymap.set("n", "q", function()
       Snacks.bufdelete(buf)
@@ -570,7 +653,9 @@ local function open_data(conn, item, t)
         local info = ("%s · %d row%s%s · ⏎ cell · y copy · R refresh"):format(head, data and #data.rows or #lines,
           (data and #data.rows or #lines) == 1 and "" or "s",
           data and #data.rows >= types.LIMIT and (" (first " .. types.LIMIT .. ")") or "")
-        if data and #data.columns > 0 then
+        if data and #data.columns > 0 and t.kind == "sql" then
+          require("datasource.edit").load(buf, data, info)
+        elseif data and #data.columns > 0 then
           grid.render(buf, data, info)
         else
           grid.render_text(buf, #lines > 0 and lines or { "(empty)" }, info)
@@ -595,6 +680,11 @@ local function open_data(conn, item, t)
   end
   local buf = tab_buf(conn.name .. "/" .. item, DATA_FT, render)
   grid.attach(buf)
+  if t.kind == "sql" then
+    require("datasource.edit").attach(buf, conn, t, item, function()
+      render(buf)
+    end)
+  end
   show_in_code(buf)
   render(buf)
 end
@@ -1079,6 +1169,7 @@ function M.setup()
       if conn then
         M.attach(ev.buf, conn)
       end
+      autosave(ev.buf)
     end,
   })
   vim.api.nvim_create_autocmd("User", {

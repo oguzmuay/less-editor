@@ -54,6 +54,7 @@ local load_configs
 local ns = vim.api.nvim_create_namespace("runner")
 local FT = "runner"
 local PANEL_WIDTH = 56
+M.PANEL_WIDTH = PANEL_WIDTH
 
 local providers = { "runner.providers.spring", "runner.providers.node" }
 
@@ -1097,8 +1098,36 @@ function M.find_panel()
   end
 end
 
+--- Panelin o anki halini (görünen log, Variables bölümü) hatırlar; panel bir sonraki açılışta aynı halde gelir.
+--- Panel kapanırken ve şerit başka bir araca (Git History vb.) verilirken çağrılır.
+function M.remember()
+  if not M.find_panel() then
+    return
+  end
+  local log = state.log_win and vim.api.nvim_win_is_valid(state.log_win) and vim.api.nvim_win_get_buf(state.log_win)
+  local debugui = package.loaded["debugui"]
+  state.last = { log = log or nil, debug = debugui ~= nil and debugui.find_panel() ~= nil }
+end
+
+--- Hatırlanan log'u panelin sağında yeniden gösterir (buffer hâlâ varsa).
+local function restore_log()
+  local buf = state.last and state.last.log
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+    return
+  end
+  for _, item in pairs(state.items) do
+    if item.buf == buf then
+      M.logs(item)
+      return
+    end
+  end
+end
+
 --- Paneli alt şeride açar. Proje kökü (workspace'te kök listesi) değiştiyse veya ağaç boşsa yeniden tarar.
-function M.open_panel()
+--- Son kapanıştaki hali geri gelir: açık olan log ve (debug oturumu sürüyorsa) Variables bölümü.
+---@param opts? { debug?: boolean } `debug = false`: Variables'ı geri getirme (çağıran kendisi açacak)
+function M.open_panel(opts)
+  opts = opts or {}
   local roots = M.roots()
   if table.concat(roots, "\n") ~= state.root or #state.tree == 0 then
     M.scan(roots)
@@ -1113,11 +1142,21 @@ function M.open_panel()
   if vim.api.nvim_buf_line_count(state.buf) > 1 then
     vim.api.nvim_win_set_cursor(win, { 2, 0 })
   end
+  restore_log()
+  local dap = package.loaded["dap"]
+  if opts.debug ~= false and state.last and state.last.debug and dap and not vim.tbl_isempty(dap.sessions()) then
+    require("debugui").open_panel()
+  end
+  vim.api.nvim_set_current_win(win)
 end
 
---- Panel ve log penceresini kapatır; çalışan süreçler arka planda devam eder.
+--- Panel, log ve Variables pencerelerini kapatır (önce halini hatırlar); çalışan süreçler arka planda devam eder.
 ---@param win integer
 function M.close_panel(win)
+  M.remember()
+  if package.loaded["debugui"] then
+    package.loaded["debugui"].close_panel()
+  end
   if state.log_win and vim.api.nvim_win_is_valid(state.log_win) and #vim.api.nvim_tabpage_list_wins(0) > 1 then
     vim.api.nvim_win_hide(state.log_win)
   end

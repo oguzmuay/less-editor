@@ -31,7 +31,7 @@ M.config = {
     "Cargo.toml",
     "pyproject.toml",
   },
-  default_layout = { "files", "claude", "terminal" },
+  default_layout = { "files", "claude" },
   ignore = { "/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/" },
 }
 
@@ -387,39 +387,6 @@ local function layout_panels()
   return type(want) == "table" and want or M.config.default_layout
 end
 
---- Panel adı → { görünür pencereyi bulan, paneli açan } çifti. Açıcılar zaten açık paneli tekrar açmaz;
---- gizli Claude/terminal sekmeleri varsa yeni süreç başlatmadan onları gösterir.
-local panels = {
-  files = {
-    find = function()
-      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "neo-tree" then
-          return w
-        end
-      end
-    end,
-    open = function()
-      require("neo-tree.command").execute({ action = "show", source = "filesystem", dir = vim.fn.getcwd() })
-    end,
-  },
-  claude = {
-    find = function()
-      return require("termtabs").win("claude")
-    end,
-    open = function()
-      require("workbench").claude()
-    end,
-  },
-  terminal = {
-    find = function()
-      return require("termtabs").win("shell")
-    end,
-    open = function()
-      require("workbench").shell()
-    end,
-  },
-}
-
 --- Editör alanındaki dashboard'u boş bir buffer'la değiştirir (dashboard'dan proje/oturum/workspace seçilince).
 local function replace_dashboard()
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -431,37 +398,35 @@ local function replace_dashboard()
   end
 end
 
---- Varsayılan düzeni kurar: solda Files, ortada editör, sağda Claude (üst) ve terminal (alt); açık olanlara dokunmaz.
---- Sonunda odak editöre (normal mod, en baştaki pinli tab) döner; o an bir picker gibi yüzen pencere odaktaysa
---- odağa dokunmaz.
+--- Proje düzenini kurar: bu proje/workspace için kayıtlı düzen varsa tam olarak o (paneller + boyutlar; listede
+--- olmayan açık paneller kapanır), yoksa varsayılan düzen (`layout_panels`, açık olanlara dokunulmaz). Sonunda odak
+--- editöre (normal mod, en baştaki pinli tab) döner; o an bir picker gibi yüzen pencere odaktaysa odağa dokunmaz.
 function M.apply_layout()
-  local want = layout_panels()
-  if #want == 0 or #vim.api.nvim_list_uis() == 0 then
+  local layout = require("autorestore.layout")
+  local saved = layout.saved()
+  local want = saved and saved.panels or layout_panels()
+  if (#want == 0 and not saved) or #vim.api.nvim_list_uis() == 0 then
+    layout.resume()
     return
   end
   replace_dashboard()
   local float = vim.api.nvim_win_get_config(0).relative ~= ""
-  for _, name in ipairs(want) do
-    local p = panels[name]
-    if p and not p.find() then
-      local ok, err = pcall(p.open)
-      if not ok then
-        vim.notify(("Could not open %s panel: %s"):format(name, err), vim.log.levels.WARN)
-      end
+  layout.open(want, saved ~= nil)
+  vim.schedule(function()
+    if saved then
+      layout.apply_sizes(saved.sizes or {})
     end
-  end
-  if not float then
-    vim.schedule(function()
-      if vim.api.nvim_win_get_config(0).relative == "" then
-        require("workbench").focus_code()
-        vim.cmd.stopinsert()
-      end
-    end)
-  end
+    layout.resume()
+    if not float and vim.api.nvim_win_get_config(0).relative == "" then
+      require("workbench").focus_code()
+      vim.cmd.stopinsert()
+    end
+  end)
 end
 
 --- Düzeni bir sonraki döngüde (oturum yüklemesi bittikten sonra) tek sefer kurar; art arda gelen tetikleri birleştirir.
 function M.schedule_layout()
+  require("autorestore.layout").pause()
   if state.layout_pending then
     return
   end
@@ -498,6 +463,22 @@ function M.setup(opts)
   state.clean_launch = argc == 0 or (argc == 1 and is_dir(vim.fn.argv(0) --[[@as string]]))
 
   vim.api.nvim_create_user_command("Dashboard", M.dashboard, { desc = "Open the dashboard" })
+
+  local layout = require("autorestore.layout")
+  layout.key = function()
+    if not enabled() or not state.has_ui then
+      return nil
+    end
+    local cwd = realpath(vim.fn.getcwd())
+    local rec = record_for(cwd)
+    if not rec or (not vim.env.NVIM_LAYOUTS_FILE and vim.iter(M.config.ignore):any(function(prefix)
+      return vim.startswith(cwd .. "/", prefix)
+    end)) then
+      return nil
+    end
+    return cwd
+  end
+  layout.setup()
 
   local group = vim.api.nvim_create_augroup("autorestore", { clear = true })
   vim.api.nvim_create_autocmd("UIEnter", {

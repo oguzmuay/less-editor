@@ -7,8 +7,8 @@ quit-after-last-window-closed = true
 # Upstream Ghostty updates must never replace LESS.
 auto-update = off
 
-# Splits don't fit an editor-first app: Neovim manages its own windows.
-keybind = super+d=unbind
+# Splits don't fit an editor-first app: Neovim manages its own windows. Cmd+D goes to Neovim (clone row in DB tables).
+keybind = super+d=csi:100;9u
 keybind = super+shift+d=unbind
 
 # Cmd+Q closes only this window: Neovim gets it (<D-q> → :confirm qa, asks about unsaved files) and the window closes

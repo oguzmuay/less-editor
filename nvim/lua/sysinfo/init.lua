@@ -91,7 +91,7 @@ local function sample()
   update_mem()
   local parts = {}
   local cpu = cpu_percent()
-  parts[#parts + 1] = ICON.cpu .. " " .. (cpu and (cpu .. "%") or "…")
+  parts[#parts + 1] = ICON.cpu .. " " .. (cpu and (cpu .. "%%") or "…") -- durum satırında `%` kaçışlı yazılır (E539)
   if state.mem_used then
     parts[#parts + 1] = ICON.mem .. " " .. gb(state.mem_used) .. "/" .. gb(uv.get_total_memory())
   end
