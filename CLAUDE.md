@@ -365,6 +365,10 @@ app/less/linux/               Linux sarmalayıcı (bin/less-editor), desktop dos
   - neo-tree yamaları iç fonksiyonlara dayanır: `manager.get_path_to_reveal` (gerçek yol → symlink yolu; reveal/follow),
     `git.status_async` (her kökün kendi reposu), `git.find_existing_status_code` (symlink → gerçek yol) +
     `git_status_changed` işleyicisi. **neo-tree güncellenince bu fonksiyonların varlığını kontrol et.**
+  - `guard_missing` (workspace'ten bağımsız, her zaman): `fs_scan.get_items` / `get_dir_items_async` sarılı. neo-tree
+    follow ile açık buffer'ın üst klasörlerini varlık kontrolü yapmadan tarıyordu: buffer'ın klasörü silinince her
+    yenilemede `<klasör>: ENOENT` hatası + async tarama bitmediği için ağaç eski halinde kalıyordu. Üst klasörü
+    olmayan `path_to_reveal` atılır, silinmiş düğüm açılırsa tüm ağaç yenilenir (düğüm düşer), ön yükleme atlanır.
   - Cmd+F / Cmd+Shift+F, dashboard `f`/`g`, `<leader>fF`: Snacks picker `files`/`grep`/`grep_word` kaynaklarının
     `config` kancasıyla tüm köklerde arar. LazyVim'in root tabanlı `<leader><space>`/`<leader>ff`'i dosyanın projesinde arar.
   - Runner: `M.roots()` + `M.scan(roots)` (string ya da liste); çok kökte açıklamaya kök adı eklenir (`backend-api › …`).

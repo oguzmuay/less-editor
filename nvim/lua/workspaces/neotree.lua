@@ -1,7 +1,7 @@
 --- neo-tree'yi workspace'in symlink klasörüyle çalıştırmak için gereken küçük uyarlamalar.
 --- Ağaç düğümleri symlink yolları taşır (`<workspace>/<kök>/...`); git durumu ve "geçerli dosyayı göster" ise gerçek
 --- yollarla çalışır. Dosya açmak için yama gerekmez: Neovim buffer adındaki symlink'leri kendisi çözer (`:edit`, `bufadd`).
---- Buradaki her yama yalnızca bir workspace açıkken devreye girer.
+--- Buradaki her yama yalnızca bir workspace açıkken devreye girer (`guard_missing` hariç: her zaman).
 local M = {}
 
 local installed = false
@@ -91,15 +91,51 @@ function M.name_component(config, node, state)
   return { name, { text = "  " .. vim.fn.nr2char(0xe725) .. " " .. branch, highlight = "Comment" } }
 end
 
+---@param path string?
+---@return boolean
+local function is_dir(path)
+  local st = path and vim.uv.fs_stat(path)
+  return st ~= nil and st.type == "directory"
+end
+
+--- Diskten silinmiş klasörler için neo-tree'nin `ENOENT` hatasını önler. neo-tree "gösterilecek dosya"nın
+--- (follow / reveal; ör. oturumdan kalan, artık olmayan bir klasördeki buffer) üst klasörlerini varlık kontrolü
+--- yapmadan tarar: klasör yoksa hata basar ve async taramada iş hiç bitmez (ağaç yenilenmez). Yama:
+--- - üst klasörü olmayan `path_to_reveal` atılır (ağaç yine yenilenir, silinen klasör listeden düşer);
+--- - silinmiş bir düğümü açma isteği (`parent_id`) tüm ağacı yenilemeye çevrilir, düğüm ağaçtan çıkar;
+--- - silinmiş düğümün ön yüklemesi (`get_dir_items_async`) atlanır.
+function M.guard_missing()
+  local fs_scan = require("neo-tree.sources.filesystem.lib.fs_scan")
+  local get_items = fs_scan.get_items
+  fs_scan.get_items = function(state, parent_id, path_to_reveal, callback, async, recursive)
+    if path_to_reveal and not is_dir(vim.fs.dirname(path_to_reveal)) then
+      path_to_reveal = nil
+    end
+    if parent_id and not is_dir(parent_id) then
+      parent_id, recursive = nil, nil
+    end
+    return get_items(state, parent_id, path_to_reveal, callback, async, recursive)
+  end
+  local get_dir_items_async = fs_scan.get_dir_items_async
+  fs_scan.get_dir_items_async = function(state, parent_id, ...)
+    if parent_id and not is_dir(parent_id) then
+      return
+    end
+    return get_dir_items_async(state, parent_id, ...)
+  end
+end
+
 --- Yamaları bir kez kurar (neo-tree'nin `setup`'ından önce, eklenti spec'inin `opts` aşamasında çağrılır):
 --- - `get_path_to_reveal`: geçerli dosyanın gerçek yolunu ağaçtaki symlink yoluna çevirir (Cmd+1 reveal, follow).
 --- - `git.status_async`: workspace klasörü için çağrılınca her kökün kendi reposunda çalışır.
 --- - `git.find_existing_status_code`: symlink yolunu gerçek yola çevirip git durumunu bulur.
+--- - `guard_missing`: silinmiş klasörlerde neo-tree hatası.
 function M.install()
   if installed then
     return
   end
   installed = true
+  M.guard_missing()
   local manager = require("neo-tree.sources.manager")
   local git = require("neo-tree.git")
 
