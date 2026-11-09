@@ -151,13 +151,17 @@ function M.projects()
     detail = "open a folder as a new project" })
   table.insert(items, { text = "new workspace", kind = "action", name = "New workspace…", run = function() M.new() end,
     detail = "group folders from different places" })
+  if #ws().list() > 0 then
+    table.insert(items, { text = "manage workspaces delete rename", kind = "action", name = "Manage workspaces…",
+      run = function() M.manage() end, detail = "add/remove folders, rename, delete" })
+  end
   local badge = {
     workspace = { g(0xf1b3) .. " workspace", "Special" },
     project = { g(0xf07b) .. " project  ", "Directory" },
     action = { g(0xf067) .. "          ", "Special" },
   }
   Snacks.picker.pick({
-    title = "Projects & Workspaces",
+    title = "Projects & Workspaces  ·  Ctrl+X delete workspace",
     items = items,
     layout = { preset = "select" },
     format = function(item)
@@ -190,18 +194,31 @@ function M.projects()
         picker:close()
         vim.schedule(M.open_folder)
       end,
+      delete_workspace = function(picker, item)
+        item = item or picker:current()
+        if not (item and item.kind == "workspace") then
+          vim.notify("Only workspaces can be deleted here", vim.log.levels.INFO)
+          return
+        end
+        picker:close()
+        vim.schedule(function()
+          M.delete(item.name, M.projects)
+        end)
+      end,
     },
     win = {
       input = {
         keys = {
           ["<C-o>"] = { "open_folder", mode = { "i", "n" } },
+          ["<C-x>"] = { "delete_workspace", mode = { "i", "n" } },
         },
       },
     },
   })
 end
 
---- Yeni workspace: ad sorulur, ardından ilk klasör seçtirilir ve yönetim menüsü açılır.
+--- Yeni workspace: ad sorulur, ardından ilk klasör seçtirilir ve yönetim menüsü açılır. Ad mevcut bir
+--- workspace'inkiyle aynıysa hata yerine o workspace'e klasör ekleme açılır.
 ---@param name string?
 function M.new(name)
   local function create(n)
@@ -209,6 +226,14 @@ function M.new(name)
       return
     end
     n = vim.trim(n)
+    local existing = ws().existing(n)
+    if existing then
+      vim.notify("Workspace “" .. existing.name .. "” already exists — add a folder to it")
+      M.add_folder(existing.name, nil, function()
+        M.manage(existing.name)
+      end)
+      return
+    end
     if ws().create(n) then
       M.add_folder(n, nil, function()
         M.manage(n)
@@ -338,15 +363,19 @@ function M.rename(name, new_name, done)
   end, true)
 end
 
---- Workspace kaydını onay alarak siler (klasörlere dokunulmaz).
+--- Workspace kaydını onay alarak siler (klasörlere dokunulmaz). `done` silme ya da iptal sonrası çağrılır.
 ---@param name string?
-function M.delete(name)
+---@param done fun()?
+function M.delete(name, done)
   with_workspace(name, "Workspace to delete", function(n)
-    vim.ui.select({ "Yes, delete", "Cancel" }, {
-      prompt = "Delete “" .. n .. "”? (folders stay on disk)",
+    vim.ui.select({ "Cancel", "Yes, delete" }, {
+      prompt = "Delete workspace “" .. n .. "”? (folders stay on disk)",
     }, function(choice)
       if choice == "Yes, delete" and ws().delete(n) then
         vim.notify("Workspace deleted: " .. n)
+      end
+      if done then
+        done()
       end
     end)
   end)

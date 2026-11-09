@@ -114,6 +114,18 @@ local function find(name)
   end
 end
 
+--- Adı verilen adla çakışan (aynı klasör adı, büyük/küçük harf duyarsız) kayıtlı workspace.
+---@param name string
+---@return Workspace?
+function M.existing(name)
+  local key = slug(vim.trim(name)):lower()
+  for _, ws in ipairs(load()) do
+    if slug(ws.name):lower() == key then
+      return vim.deepcopy(ws)
+    end
+  end
+end
+
 ---@param name string
 ---@return Workspace?
 function M.get(name)
@@ -368,7 +380,7 @@ local function leave_current()
   return true
 end
 
---- Workspace'i açar: symlink klasörünü eşitler, çalışma klasörünü oraya taşır, varsa oturumunu yükler
+--- Workspace'i açar (klasörü yoksa önce klasör ekleme seçicisi açılır, eklenince workspace açılır): symlink klasörünü eşitler, çalışma klasörünü oraya taşır, varsa oturumunu yükler
 --- ve dosya panelinde tüm kökleri gösterir.
 ---@param name string
 function M.open(name)
@@ -381,7 +393,13 @@ function M.open(name)
     return vim.fn.isdirectory(r) == 0
   end, ws.roots)
   if #missing == #ws.roots then
-    vim.notify("Workspace “" .. name .. "” has no folders to open; add a folder first", vim.log.levels.WARN)
+    vim.notify("Workspace “" .. name .. "” has no folders yet — choose a folder to add", vim.log.levels.INFO)
+    require("workspaces.ui").add_folder(name, nil, function()
+      local w = find(name)
+      if w and vim.iter(w.roots):any(function(r) return vim.fn.isdirectory(r) == 1 end) then
+        M.open(name)
+      end
+    end)
     return
   end
   if #missing > 0 then

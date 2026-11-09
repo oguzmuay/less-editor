@@ -41,6 +41,8 @@ map(nt, "<D-k>", function() require("shortcuts").open() end, { desc = "Search sh
 map(nt, "<D-F>", function() Snacks.picker.grep() end, { desc = "Grep in project" })
 map(nt, "<D-E>", wb.files, { desc = "Panel: Files" })
 map("n", "<D-w>", wb.close_tab, { desc = "Close buffer" })
+-- Cmd+Q (yalnız LESS'te Neovim'e gelir): bu pencereyi kapatır, diğer LESS pencereleri açık kalır
+map({ "n", "i", "v", "t" }, "<D-q>", "<cmd>confirm qa<cr>", { desc = "Close this window (quit Neovim)" })
 map("n", "<D-/>", "gcc", { remap = true, desc = "Toggle comment" })
 map("v", "<D-/>", "gc", { remap = true, desc = "Toggle comment" })
 map("t", "<C-q>", "<C-\\><C-n>", { desc = "Terminal: normal mode" })

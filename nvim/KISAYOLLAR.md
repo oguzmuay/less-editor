@@ -25,7 +25,7 @@
 - Alt şerit açıkken her zaman sol panellerin (Git / Files) altına uzanır (sol panel sonradan açılsa da şeridin üstüne çıkmaz); sağ sütunun altına giremez.
 - Sol paneller birbirinin yerine geçmez, yan yana açılabilir (Git en solda).
 - Uzun mesajlar (ve `:Noice` geçmişi) da alt şeritte açılır, `q` ile kapanır; Run / Git History ile aynı yeri paylaşır.
-- Ortadaki kod penceresi `:q` / `:wq` / `Space w d` ile kapanmaz (`:wq` yine kaydeder). Tab kapatmak Cmd+W, çıkmak `:qa` / Cmd+Q.
+- Ortadaki kod penceresi `:q` / `:wq` / `Space w d` ile kapanmaz (`:wq` yine kaydeder). Tab kapatmak Cmd+W, bu pencereden çıkmak `:qa` / Cmd+Q (diğer LESS pencereleri açık kalır; LESS'i tümden kapatmak: menü LESS > Quit LESS).
 - Alt şeritte aynı anda **ya Run ya Git History** paneli açık olur; biri açılınca diğeri kapanır.
 
 ## Paneller
@@ -70,6 +70,7 @@ Tab ile tamamlanır (ör. `:Gi` + Tab → `Git`, `GitBlame`).
 | **Cmd+T** | Claude panelinde yeni Claude oturumu · Terminal panelinde yeni shell · başka yerde yeni boş dosya |
 | Mouse ile tab'a tıkla | O dosyaya geç; üzerine gelince çıkan × ile kapat |
 | **Cmd+W** | Tab'ı (buffer) kapat |
+| **Cmd+Q** | Yalnız bu LESS penceresini kapat (kaydedilmemiş dosya varsa sorar); tüm LESS: menü LESS > Quit LESS |
 | **Cmd+P** (veya `Space b p`) | Tab'ı pinle / pin'i kaldır (📌, başa geçer; oturumla kalır). Panelden basılırsa son kod tab'ına uygulanır |
 | `Space b P` | Sabitlenmemiş tüm tabları kapat |
 | `Space b o` | Diğer tüm tabları kapat |
@@ -98,15 +99,15 @@ Terminal ve Claude panelinde Cmd+Sol/Sağ shell'e satır başı/sonu, Option+Sol
 
 | Ne | Nasıl |
 |---|---|
-| Projeler + workspace'ler tek listede | Açılış ekranında **`p`** · **`Space f p`** (satırda `project` / `workspace` etiketi, açık olan ●; sonda "Open folder…" ve "New workspace…"; Ctrl+O klasör açar) |
+| Projeler + workspace'ler tek listede | Açılış ekranında **`p`** · **`Space f p`** (satırda `project` / `workspace` etiketi, açık olan ●; sonda "Open folder…", "New workspace…", "Manage workspaces…"; Ctrl+O klasör açar, **Ctrl+X seçili workspace'i siler** (onaylı)) |
 | Yeni proje (daha önce açılmamış klasör) | Açılış ekranında **`o`** (Open Folder) |
 | Yeni workspace | Açılış ekranında **`w`** (New Workspace) |
 | Workspace listesi / aç | **`:Workspace`** · **`Space f w`** (açık olan ● ile işaretli; listenin sonunda "＋ Create new workspace…" ve "⚙ Manage workspaces…") |
 | Yönetim menüsü | **`Space f W`** · `:Workspace manage [ad]` → Open / Add folder… / Remove folder… / Rename… / Delete… |
-| Yeni workspace | `:Workspace new [ad]` (ad + ilk klasör sorulur, sonra yönetim menüsü açılır) |
+| Yeni workspace | `:Workspace new [ad]` (ad + ilk klasör sorulur, sonra yönetim menüsü açılır; ad zaten varsa hata yerine o workspace'e klasör ekleme açılır) |
 | Klasör ekle | `:Workspace add [yol]` (Tab ile tamamlanır; yol yoksa: ağaçta seçili klasör / çalışma klasörü / son projeler / yol yaz) |
 | Klasör çıkar · adlandır · sil | `:Workspace remove` · `:Workspace rename [ad]` · `:Workspace delete [ad]` (diskteki klasörlere dokunulmaz) |
-| Doğrudan aç | `:Workspace open <ad>` (Tab ile tamamlanır) |
+| Doğrudan aç | `:Workspace open <ad>` (Tab ile tamamlanır; klasörü olmayan workspace açılınca önce klasör ekleme açılır, eklenince workspace açılır) |
 | Workspace'ten çık | `:Workspace close` |
 
 Workspace açıkken: Cmd+1'de tüm klasörler üst düğüm olarak görünür (git reposuysa yanında o anki branch), Cmd+F / Cmd+Shift+F hepsinde arar,

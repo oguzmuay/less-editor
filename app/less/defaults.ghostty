@@ -11,5 +11,9 @@ auto-update = off
 keybind = super+d=unbind
 keybind = super+shift+d=unbind
 
+# Cmd+Q closes only this window: Neovim gets it (<D-q> → :confirm qa, asks about unsaved files) and the window closes
+# when Neovim exits. Quitting all of LESS: menu LESS > Quit LESS. Only in LESS; plain Ghostty keeps its Cmd+Q.
+keybind = super+q=csi:113;9u
+
 # :Font writes this file inside LESS.
 config-file = ?~/.config/less/font.ghostty
