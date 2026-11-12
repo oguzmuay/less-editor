@@ -653,10 +653,20 @@ fn inherited_claude_vars(keys: impl Iterator<Item = std::ffi::OsString>) -> Vec<
 mod inherited_env_tests {
     #[test]
     fn strips_only_session_markers() {
-        let keys = ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN",
-            "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK", "PATH"];
+        let keys = [
+            "CLAUDECODE",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CLAUDE_CONFIG_DIR",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "PATH",
+        ];
         let got = super::inherited_claude_vars(keys.iter().map(Into::into));
         let got: Vec<_> = got.iter().map(|k| k.to_string_lossy().into_owned()).collect();
-        assert_eq!(got, ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN"]);
+        assert_eq!(
+            got,
+            ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN"]
+        );
     }
 }
