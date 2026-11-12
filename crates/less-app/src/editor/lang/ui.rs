@@ -286,28 +286,24 @@ fn tooltip_ui(ui: &mut egui::Ui, tip: &less_lang::Tooltip, width: f32, p: &Palet
             ui.label(job);
         }
         if let Some(doc) = &tip.doc {
-            doc_ui(ui, doc, width, p);
+            doc_ui(ui, doc, tip.doc_is_markdown, width, p);
         }
     });
 }
 
-/// Markdown dokümantasyonu sade çizer: kod çitleri gizli, başlıklar vurgulu, kod satırları ön plan renginde.
-fn doc_ui(ui: &mut egui::Ui, doc: &str, width: f32, p: &Palette) {
-    let font = FontId::monospace(TIP_SIZE);
-    let mut code = false;
-    for l in doc.lines() {
-        if l.trim_start().starts_with("```") {
-            code = !code;
-            continue;
-        }
-        let (text, c) = match l.strip_prefix('#') {
-            Some(h) if !code => (h.trim_start_matches('#').trim().to_owned(), color(p.accent)),
-            _ => (l.to_owned(), if code { color(p.fg) } else { color(p.fg_dim) }),
-        };
-        let mut job = LayoutJob::single_section(text, egui::TextFormat::simple(font.clone(), c));
-        job.wrap.max_width = width;
-        ui.label(job);
+/// Dokümantasyon: markdown ise biçimli (bağlantılar yalnız adlarıyla, adres gösterilmez), değilse düz metin.
+fn doc_ui(ui: &mut egui::Ui, doc: &str, markdown: bool, width: f32, p: &Palette) {
+    ui.set_max_width(width);
+    if markdown {
+        crate::editor::markdown::draw(ui, p, doc);
+        return;
     }
+    let mut job = LayoutJob::single_section(
+        doc.to_owned(),
+        egui::TextFormat::simple(FontId::monospace(TIP_SIZE), color(p.fg_dim)),
+    );
+    job.wrap.max_width = width;
+    ui.label(job);
 }
 
 /// Tamamlama listesi (imlecin altında, kelime başına hizalı), seçili öğenin dokümantasyonu (sağında) ve imza
@@ -347,7 +343,7 @@ fn completion_ui(lang: &mut Lang, tab: &EditorTab, geo: &CodeGeometry, ui: &mut 
                     ui.label(job);
                     for d in [&view.param_doc, &view.doc].into_iter().flatten() {
                         let short: String = d.lines().take(6).collect::<Vec<_>>().join("\n");
-                        doc_ui(ui, &short, 560.0, &p);
+                        doc_ui(ui, &short, true, 560.0, &p);
                     }
                 });
             });
@@ -475,7 +471,7 @@ fn completion_ui(lang: &mut Lang, tab: &EditorTab, geo: &CodeGeometry, ui: &mut 
                             ui.add_space(4.0);
                         }
                         let short: String = doc.lines().take(30).collect::<Vec<_>>().join("\n");
-                        doc_ui(ui, &short, 380.0, &p);
+                        doc_ui(ui, &short, true, 380.0, &p);
                     }
                 });
             });

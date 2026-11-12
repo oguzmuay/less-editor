@@ -238,13 +238,19 @@ pub fn show(ui: &mut Ui, p: &Palette, text: &str, id: impl egui::AsIdSalt) -> Op
     egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(32, 20)).show(ui, |ui| {
             ui.set_max_width(ui.available_width().min(860.0));
-            draw_blocks(ui, p, &blocks, &mut clicked);
+            draw_blocks(ui, p, &blocks, &mut clicked, false);
         });
     });
     clicked
 }
 
-fn draw_blocks(ui: &mut Ui, p: &Palette, blocks: &[Block], clicked: &mut Option<String>) {
+/// Markdown'ı kaydırma alanı ve arka plan olmadan, bulunduğu yere çizer (hover / imza yardımı tooltip'leri).
+pub fn draw(ui: &mut Ui, p: &Palette, text: &str) {
+    draw_blocks(ui, p, &parse(text), &mut None, true);
+}
+
+/// `wrap`: kod blokları yatay kaydırma yerine sarılır (etkileşimsiz tooltip'te kaydırılamaz).
+fn draw_blocks(ui: &mut Ui, p: &Palette, blocks: &[Block], clicked: &mut Option<String>, wrap: bool) {
     for (i, b) in blocks.iter().enumerate() {
         if i > 0 {
             ui.add_space(8.0);
@@ -270,14 +276,18 @@ fn draw_blocks(ui: &mut Ui, p: &Palette, blocks: &[Block], clicked: &mut Option<
                     .inner_margin(10)
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
-                        egui::ScrollArea::horizontal().id_salt(ui.next_auto_id()).show(ui, |ui| {
-                            let rt = RichText::new(body).font(FontId::monospace(13.0)).color(color(p.fg));
-                            ui.add(Label::new(rt).extend());
-                        });
+                        let rt = RichText::new(body).font(FontId::monospace(13.0)).color(color(p.fg));
+                        if wrap {
+                            ui.add(Label::new(rt).wrap());
+                        } else {
+                            egui::ScrollArea::horizontal().id_salt(ui.next_auto_id()).show(ui, |ui| {
+                                ui.add(Label::new(rt).extend());
+                            });
+                        }
                     });
             }
             Block::Quote(inner) => {
-                let resp = ui.indent(ui.next_auto_id(), |ui| draw_blocks(ui, p, inner, clicked));
+                let resp = ui.indent(ui.next_auto_id(), |ui| draw_blocks(ui, p, inner, clicked, wrap));
                 let r = resp.response.rect;
                 ui.painter().vline(r.left() + 4.0, r.y_range(), Stroke::new(3.0, color(p.border)));
             }
@@ -290,7 +300,7 @@ fn draw_blocks(ui: &mut Ui, p: &Palette, blocks: &[Block], clicked: &mut Option<
                     ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
                         let rt = RichText::new(marker).size(BODY).color(color(p.comment));
                         ui.add_sized([22.0, BODY * 1.3], Label::new(rt));
-                        ui.vertical(|ui| draw_blocks(ui, p, item, clicked));
+                        ui.vertical(|ui| draw_blocks(ui, p, item, clicked, wrap));
                     });
                 }
             }
