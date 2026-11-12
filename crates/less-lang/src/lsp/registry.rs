@@ -185,6 +185,12 @@ pub fn server_for(lang: Language) -> Option<ServerSpec> {
             ],
             install_hint: "Install it from :options (Language Servers → basedpyright)",
         },
+        L::Xml => ServerSpec {
+            id: "lemminx",
+            candidates: &[("lemminx", &[])],
+            root_markers: &["pom.xml"],
+            install_hint: "Install it from :options (Language Servers → XML / Maven pom.xml)",
+        },
         L::Sql | L::Properties => return None,
     })
 }

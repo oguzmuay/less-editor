@@ -25,6 +25,8 @@ pub enum Language {
     Python,
     /// Java `.properties` (Spring Boot `application*.properties`).
     Properties,
+    /// XML (Maven `pom.xml`, `settings.xml`).
+    Xml,
 }
 
 /// Bir dilin yorum işaretleri (Cmd+/ ve "yorum içinde mi" kararları için).
@@ -53,7 +55,7 @@ const BRACES_OUT: &[&str] = &["}", ")", "]"];
 
 impl Language {
     /// Tüm diller (testler ve seçiciler için).
-    pub const ALL: [Language; 19] = [
+    pub const ALL: [Language; 20] = [
         Language::Java,
         Language::TypeScript,
         Language::Tsx,
@@ -73,6 +75,7 @@ impl Language {
         Language::Go,
         Language::Python,
         Language::Properties,
+        Language::Xml,
     ];
 
     /// Dosya yolundan dili bulur: önce tam dosya adı (`Dockerfile` yok; `.bashrc`, `Cargo.lock`), sonra uzantı.
@@ -112,6 +115,7 @@ impl Language {
             "go" => Language::Go,
             "py" | "pyi" | "pyw" => Language::Python,
             "properties" => Language::Properties,
+            "xml" | "xsd" | "xsl" | "xslt" | "pom" | "wsdl" => Language::Xml,
             _ => return None,
         })
     }
@@ -134,7 +138,7 @@ impl Language {
             "toml" => Language::Toml,
             "bash" | "sh" | "shell" | "zsh" | "console" => Language::Bash,
             "css" | "scss" => Language::Css,
-            "html" | "xml" => Language::Html,
+            "html" => Language::Html,
             "kotlin" | "kt" => Language::Kotlin,
             "go" | "golang" => Language::Go,
             "python" | "py" | "python3" => Language::Python,
@@ -164,6 +168,7 @@ impl Language {
             Language::Go => "Go",
             Language::Python => "Python",
             Language::Properties => "Properties",
+            Language::Xml => "XML",
         }
     }
 
@@ -189,6 +194,7 @@ impl Language {
             Language::Go => "go",
             Language::Python => "python",
             Language::Properties => "properties",
+            Language::Xml => "xml",
         }
     }
 
@@ -208,7 +214,9 @@ impl Language {
             Language::Yaml | Language::Toml | Language::Bash | Language::Python | Language::Properties => {
                 CommentTokens { line: Some("#"), block: None }
             }
-            Language::Markdown | Language::Html => CommentTokens { line: None, block: Some(("<!--", "-->")) },
+            Language::Markdown | Language::Html | Language::Xml => {
+                CommentTokens { line: None, block: Some(("<!--", "-->")) }
+            }
             Language::Sql => CommentTokens { line: Some("--"), block: Some(("/*", "*/")) },
             Language::Lua => CommentTokens { line: Some("--"), block: Some(("--[[", "]]")) },
             Language::Css => CommentTokens { line: None, block: Some(("/*", "*/")) },
@@ -242,6 +250,7 @@ impl Language {
                 spaces(2, &["then", "do", "{", "(", "else", "in"], &["fi", "done", "}", ")", "else", "elif", "esac"])
             }
             Language::Html => spaces(2, &[">"], &["</"]),
+            Language::Xml => spaces(4, &[">"], &["</"]),
         }
     }
 }
@@ -308,6 +317,7 @@ mod tests {
             ("main.go", Some(Language::Go)),
             ("app.py", Some(Language::Python)),
             ("src/main/resources/application.properties", Some(Language::Properties)),
+            ("backend/pom.xml", Some(Language::Xml)),
             ("noext", None),
             ("photo.png", None),
         ];

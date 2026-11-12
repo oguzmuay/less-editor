@@ -9,6 +9,7 @@ use std::path::Path;
 pub use node::{NodeProvider, ordered_scripts, package_manager};
 pub use spring::{SpringProvider, main_class};
 pub(crate) use walk::find_upward as walk_find_upward;
+pub use walk::{find_files, find_upward};
 
 use crate::model::{Child, Group};
 

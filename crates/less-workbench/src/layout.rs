@@ -15,6 +15,8 @@ pub enum Panel {
     Ai,
     Terminal,
     Database,
+    /// Maven goal'ları; sağ sütunda Database'in yerinde (ikisinden biri açık).
+    Maven,
     Run,
     GitHistory,
     Messages,
@@ -30,6 +32,7 @@ impl Panel {
             Panel::Ai => "claude",
             Panel::Terminal => "terminal",
             Panel::Database => "db",
+            Panel::Maven => "maven",
             Panel::Run => "runner",
             Panel::GitHistory => "git_history",
             Panel::Messages => "messages",
@@ -44,6 +47,7 @@ impl Panel {
             Panel::Ai,
             Panel::Terminal,
             Panel::Database,
+            Panel::Maven,
             Panel::Run,
             Panel::GitHistory,
             Panel::Messages,
@@ -86,9 +90,9 @@ pub enum Effect {
     Opened(Panel),
     Closed(Panel),
     Focused(Panel),
-    /// AI / terminal Database için gizlendi (süreç ölmez).
+    /// AI / terminal Database / Maven için gizlendi (süreç ölmez).
     Hidden(Panel),
-    /// Database kapanınca AI / terminal geri geldi.
+    /// Database / Maven kapanınca AI / terminal geri geldi.
     Restored(Panel),
 }
 
@@ -214,6 +218,7 @@ pub struct Rects {
     pub ai: Option<Rect>,
     pub terminal: Option<Rect>,
     pub database: Option<Rect>,
+    pub maven: Option<Rect>,
     /// Alt şeridin tamamı.
     pub strip: Option<(StripTool, Rect)>,
     /// Şerit içi parçalar: Run'da ağaç / log / Variables, Git History'de Branches / geçmiş.
@@ -243,7 +248,8 @@ pub struct Layout {
     left: Option<Panel>,
     ai: bool,
     terminal: bool,
-    db: bool,
+    /// Sağ sütunu tek başına kaplayan panel (Database ya da Maven).
+    side: Option<Panel>,
     ai_hidden_by_db: bool,
     terminal_hidden_by_db: bool,
     strip: Option<StripTool>,
@@ -267,7 +273,7 @@ impl Layout {
             left: None,
             ai: false,
             terminal: false,
-            db: false,
+            side: None,
             ai_hidden_by_db: false,
             terminal_hidden_by_db: false,
             strip: None,
@@ -293,9 +299,9 @@ impl Layout {
         match panel {
             Panel::Code => true,
             Panel::Files | Panel::Git => self.left == Some(panel),
-            Panel::Ai => self.ai && !self.db,
-            Panel::Terminal => self.terminal && !self.db,
-            Panel::Database => self.db,
+            Panel::Ai => self.ai && self.side.is_none(),
+            Panel::Terminal => self.terminal && self.side.is_none(),
+            Panel::Database | Panel::Maven => self.side == Some(panel),
             Panel::Run | Panel::GitHistory | Panel::Messages => self.strip.map(StripTool::panel) == Some(panel),
         }
     }
@@ -321,6 +327,7 @@ impl Layout {
             Panel::Ai,
             Panel::Terminal,
             Panel::Database,
+            Panel::Maven,
             Panel::Run,
             Panel::GitHistory,
             Panel::Messages,
@@ -331,7 +338,8 @@ impl Layout {
     }
 
     fn hidden_ai_terminal(&self, p: Panel) -> bool {
-        (p == Panel::Ai && self.ai && self.db) || (p == Panel::Terminal && self.terminal && self.db)
+        let db = self.side.is_some();
+        (p == Panel::Ai && self.ai && db) || (p == Panel::Terminal && self.terminal && db)
     }
 
     /// Cmd+N tuşu davranışı (#5): kapalıysa aç, açıksa odakla, odaktaysa kapat ve koda dön.
@@ -374,7 +382,7 @@ impl Layout {
                 self.left = Some(panel);
             }
             Panel::Ai | Panel::Terminal => {
-                if self.db {
+                if self.side.is_some() {
                     fx.extend(self.drop_db());
                 }
                 if panel == Panel::Ai {
@@ -383,21 +391,26 @@ impl Layout {
                     self.terminal = true;
                 }
             }
-            Panel::Database => {
-                if self.db {
-                    self.focus = panel;
-                    return vec![Effect::Focused(panel)];
+            Panel::Database | Panel::Maven => {
+                match self.side {
+                    Some(p) if p == panel => {
+                        self.focus = panel;
+                        return vec![Effect::Focused(panel)];
+                    }
+                    Some(other) => fx.push(Effect::Closed(other)),
+                    None => {
+                        self.inherit_right_width();
+                        self.ai_hidden_by_db = self.ai;
+                        self.terminal_hidden_by_db = self.terminal;
+                        if self.ai {
+                            fx.push(Effect::Hidden(Panel::Ai));
+                        }
+                        if self.terminal {
+                            fx.push(Effect::Hidden(Panel::Terminal));
+                        }
+                    }
                 }
-                self.inherit_right_width();
-                self.ai_hidden_by_db = self.ai;
-                self.terminal_hidden_by_db = self.terminal;
-                if self.ai {
-                    fx.push(Effect::Hidden(Panel::Ai));
-                }
-                if self.terminal {
-                    fx.push(Effect::Hidden(Panel::Terminal));
-                }
-                self.db = true;
+                self.side = Some(panel);
             }
             Panel::Run | Panel::GitHistory | Panel::Messages => {
                 let tool = panel.strip_tool().expect("şerit paneli");
@@ -430,8 +443,8 @@ impl Layout {
             Panel::Files | Panel::Git => self.left = None,
             Panel::Ai => self.ai = false,
             Panel::Terminal => self.terminal = false,
-            Panel::Database => {
-                self.db = false;
+            Panel::Database | Panel::Maven => {
+                self.side = None;
                 if std::mem::take(&mut self.ai_hidden_by_db) {
                     fx.push(Effect::Restored(Panel::Ai));
                 }
@@ -461,10 +474,9 @@ impl Layout {
 
     /// AI / terminal açılırken Database kapanır, geri yükleme iptal olur.
     fn drop_db(&mut self) -> Vec<Effect> {
-        self.db = false;
         self.ai_hidden_by_db = false;
         self.terminal_hidden_by_db = false;
-        vec![Effect::Closed(Panel::Database)]
+        self.side.take().map(Effect::Closed).into_iter().collect()
     }
 
     fn inherit_right_width(&mut self) {
@@ -514,7 +526,7 @@ impl Layout {
     }
 
     pub fn set_right_width(&mut self, w: f32) {
-        if self.db {
+        if self.side.is_some() {
             self.sizes.db_w = Some(w);
         } else {
             self.sizes.right_w = Some(w);
@@ -572,11 +584,12 @@ impl Layout {
     pub fn compute(&self, total_w: f32, total_h: f32) -> Rects {
         let m = self.metrics;
         let mut out = Rects::default();
-        let right_visible = self.db || (self.ai && !self.db) || (self.terminal && !self.db);
+        let db = self.side.is_some();
+        let right_visible = db || self.ai || self.terminal;
         let (rmin, rmax) = self.limits.right(&m, total_w);
         let right_w = if right_visible {
-            let v = if self.db { self.sizes.db_w.or(self.sizes.right_w) } else { self.sizes.right_w };
-            let pick: fn(&Sizes) -> Option<f32> = if self.db { |s| s.db_w } else { |s| s.right_w };
+            let v = if db { self.sizes.db_w.or(self.sizes.right_w) } else { self.sizes.right_w };
+            let pick: fn(&Sizes) -> Option<f32> = if db { |s| s.db_w } else { |s| s.right_w };
             self.size_or(v, total_w, total_h, pick).clamp(rmin, rmax)
         } else {
             0.0
@@ -610,8 +623,9 @@ impl Layout {
 
         if right_visible {
             let x = main_w;
-            if self.db {
-                out.database = Some(Rect::new(x, 0.0, right_w, total_h));
+            if let Some(side) = self.side {
+                let r = Some(Rect::new(x, 0.0, right_w, total_h));
+                if side == Panel::Maven { out.maven = r } else { out.database = r }
             } else if self.ai && self.terminal {
                 let ratio = self.sizes.ai_ratio.unwrap_or(0.5).clamp(0.1, 0.9);
                 let ai_h = (total_h * ratio).round();
@@ -777,6 +791,20 @@ mod tests {
         assert!(!l.is_open(Panel::Database));
         assert!(l.is_open(Panel::Ai));
         assert!(l.is_open(Panel::Terminal));
+    }
+
+    #[test]
+    fn maven_takes_database_slot_and_keeps_hidden_ai() {
+        let mut l = layout();
+        l.open(Panel::Ai);
+        l.open(Panel::Database);
+        let fx = l.open(Panel::Maven);
+        assert!(fx.contains(&Effect::Closed(Panel::Database)));
+        assert!(l.is_open(Panel::Maven) && !l.is_open(Panel::Database) && !l.is_open(Panel::Ai));
+        let r = l.compute(W, H);
+        assert!(r.maven.is_some() && r.database.is_none());
+        let fx = l.close(Panel::Maven);
+        assert!(fx.contains(&Effect::Restored(Panel::Ai)) && l.is_open(Panel::Ai));
     }
 
     #[test]

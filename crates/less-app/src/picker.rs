@@ -110,12 +110,13 @@ pub enum Command {
 }
 
 /// Cmd+K listesi: `(tuşlar, açıklama, Enter'da çalışan komut)`.
-pub const SHORTCUTS: [(&str, &str, Option<Command>); 27] = [
+pub const SHORTCUTS: [(&str, &str, Option<Command>); 28] = [
     ("Cmd 1", "Files", Some(Command::ToggleFiles)),
     ("Cmd 2", "Code editor", Some(Command::FocusEditor)),
     ("Cmd 3", "AI", Some(Command::Panel(less_workbench::layout::Panel::Ai))),
     ("Cmd 4", "Terminal", Some(Command::Panel(less_workbench::layout::Panel::Terminal))),
     ("Cmd 5", "Database", Some(Command::Panel(less_workbench::layout::Panel::Database))),
+    ("Cmd M", "Maven", Some(Command::Panel(less_workbench::layout::Panel::Maven))),
     ("Cmd 6", "Run", Some(Command::Panel(less_workbench::layout::Panel::Run))),
     ("Cmd 7", "Git History", Some(Command::Panel(less_workbench::layout::Panel::GitHistory))),
     ("Cmd 0", "Git", Some(Command::Panel(less_workbench::layout::Panel::Git))),

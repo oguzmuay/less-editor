@@ -11,7 +11,7 @@ use crate::picker::Mode;
 /// kullanmazsa (panel odaktayken).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shortcut {
-    /// Cmd+0..7: aç / odakla / odaktaysa kapat (#5).
+    /// Cmd+0..7, Cmd+M (Maven): aç / odakla / odaktaysa kapat (#5).
     Panel(Area),
     /// Cmd+Shift+0: `:UIReset` (#42).
     ResetLayout,
@@ -70,6 +70,7 @@ pub fn shortcut(k: &KeyEvent) -> Option<Shortcut> {
             ('q', false) => Shortcut::Quit,
             ('n', false) => Shortcut::Notes,
             ('n', true) => Shortcut::NewWindow,
+            ('m', false) => Shortcut::Panel(Area::Maven),
             _ => return None,
         },
         _ => return None,

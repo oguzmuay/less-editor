@@ -222,3 +222,21 @@ fn real_install() {
         std::thread::sleep(Duration::from_millis(200));
     }
 }
+
+#[test]
+fn classpath_launcher_skips_test_jars() {
+    let tmp = tempfile::tempdir().unwrap();
+    for jar in [
+        "lemminx-maven-0.12.0.jar",
+        "org.eclipse.lemminx-0.30.1.jar",
+        "org.eclipse.lemminx-0.30.1-tests.jar",
+        "junit-jupiter-5.12.1.jar",
+    ] {
+        fs::write(tmp.path().join(jar), "").unwrap();
+    }
+    let script = classpath_launcher(tmp.path(), "org.eclipse.lemminx.XMLServerLauncher").unwrap();
+    assert!(script.contains("lemminx-maven-0.12.0.jar:") && script.contains("org.eclipse.lemminx-0.30.1.jar'"));
+    assert!(!script.contains("tests.jar") && !script.contains("junit"));
+    assert!(script.ends_with("org.eclipse.lemminx.XMLServerLauncher \"$@\"\n"));
+    assert!(classpath_launcher(&tmp.path().join("none"), "X").is_none());
+}

@@ -69,11 +69,12 @@ impl Snapshot {
                 layout.close(p);
             }
         }
-        for p in want.iter().filter(|p| **p != Panel::Database) {
+        let side = |p: &Panel| matches!(p, Panel::Database | Panel::Maven);
+        for p in want.iter().filter(|p| !side(p)) {
             layout.open(*p);
         }
-        if want.contains(&Panel::Database) {
-            layout.open(Panel::Database);
+        if let Some(p) = want.iter().find(|p| side(p)) {
+            layout.open(*p);
         }
         layout.press(Panel::Code);
         if let Some(w) = self.sizes.right {

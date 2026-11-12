@@ -34,12 +34,13 @@ enum View {
 }
 
 /// Kısayollar görünümü: `docs/KEYMAP.md`'deki taşınan kısayolların karşılama ekranında anlamlı olan kısmı.
-const SHORTCUTS: [(&str, &str); 15] = [
+const SHORTCUTS: [(&str, &str); 16] = [
     ("Cmd 1", "Files"),
     ("Cmd 2", "Code editor"),
     ("Cmd 3", "AI"),
     ("Cmd 4", "Terminal"),
     ("Cmd 5", "Database"),
+    ("Cmd M", "Maven"),
     ("Cmd 6", "Run"),
     ("Cmd 7", "Git History"),
     ("Cmd 0", "Git"),

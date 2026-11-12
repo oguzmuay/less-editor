@@ -37,6 +37,8 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("Claude", "Toggle the AI panel"),
     ("Terminal", "Toggle the terminal"),
     ("Datasource", "Toggle Database"),
+    ("Maven", "Toggle Maven"),
+    ("MavenNew", "New Maven project (groupId:artifactId)"),
     ("Run", "Toggle Run"),
     ("Git", "Toggle Git"),
     ("GitHistory", "Toggle Git History"),

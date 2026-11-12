@@ -62,6 +62,7 @@ fn load(lang: Language) -> Result<Grammar, String> {
         L::Go => build(tree_sitter_go::LANGUAGE.into(), &[tree_sitter_go::HIGHLIGHTS_QUERY]),
         L::Python => build(tree_sitter_python::LANGUAGE.into(), &[tree_sitter_python::HIGHLIGHTS_QUERY]),
         L::Properties => build(tree_sitter_properties::LANGUAGE.into(), &[tree_sitter_properties::HIGHLIGHTS_QUERY]),
+        L::Xml => build(tree_sitter_xml::LANGUAGE_XML.into(), &[tree_sitter_xml::XML_HIGHLIGHT_QUERY]),
     }
 }
 

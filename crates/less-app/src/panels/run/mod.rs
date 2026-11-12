@@ -43,7 +43,7 @@ pub fn panels() -> Vec<Box<dyn Panel>> {
 }
 
 /// Bu panelde kullanılan Phosphor ikonları (kod noktaları gömülü fontta var; görsel olarak denetlenmedi).
-mod icons {
+pub(crate) mod icons {
     pub const PLAY: &str = "\u{E3D0}";
     pub const STOP: &str = "\u{E46C}";
     pub const BUG: &str = "\u{E5F4}";

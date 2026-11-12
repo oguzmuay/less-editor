@@ -1550,7 +1550,12 @@ impl ProjectView {
             self.region(ui, p, &ctx, Region::Area(area), at(r));
         }
         self.code_area(ui, p, &ctx, at(rects.code));
-        for (area, r) in [(Area::Ai, rects.ai), (Area::Terminal, rects.terminal), (Area::Database, rects.database)] {
+        for (area, r) in [
+            (Area::Ai, rects.ai),
+            (Area::Terminal, rects.terminal),
+            (Area::Database, rects.database),
+            (Area::Maven, rects.maven),
+        ] {
             if let Some(r) = r {
                 self.region(ui, p, &ctx, Region::Area(area), at(r));
             }
@@ -1564,7 +1569,7 @@ impl ProjectView {
         if let Some((_, r)) = rects.left {
             painter.vline(at(r).right(), at(r).y_range(), line);
         }
-        if let Some(r) = rects.ai.or(rects.terminal).or(rects.database) {
+        if let Some(r) = rects.ai.or(rects.terminal).or(rects.database).or(rects.maven) {
             painter.vline(at(r).left(), body.y_range(), line);
         }
         if let (Some(_), Some(t)) = (rects.ai, rects.terminal) {
@@ -1592,7 +1597,7 @@ impl ProjectView {
                 changed = true;
             }
         }
-        if let Some(r) = rects.ai.or(rects.terminal).or(rects.database) {
+        if let Some(r) = rects.ai.or(rects.terminal).or(rects.database).or(rects.maven) {
             let r = at(r);
             let edge = Rect::from_center_size(pos2(r.left(), body.center().y), vec2(HANDLE, h));
             if let Some(d) = handle(ui, "resize-right", edge, true) {
@@ -2045,6 +2050,7 @@ fn region_name(region: Region) -> &'static str {
         Area::Ai => "AI",
         Area::Terminal => "Terminal",
         Area::Database => "Database",
+        Area::Maven => "Maven",
         Area::Run => "Run",
         Area::GitHistory => "Git History",
         Area::Messages => "Messages",

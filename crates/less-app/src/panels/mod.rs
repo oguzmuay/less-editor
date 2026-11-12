@@ -7,6 +7,7 @@
 pub mod ai;
 pub mod db;
 pub mod git;
+pub mod maven;
 pub mod options;
 pub mod run;
 
@@ -27,13 +28,14 @@ pub fn all() -> Vec<Box<dyn Panel>> {
     v.extend(run::panels());
     v.extend(ai::panels());
     v.extend(db::panels());
+    v.extend(maven::panels());
     v.extend(options::panels());
     v
 }
 
 /// Ekranda bir panelin çizebileceği bölge.
 ///
-/// - `Area(Git)`: sol sütun (Files host'undur). `Area(Ai)`, `Area(Terminal)`, `Area(Database)`: sağ sütun.
+/// - `Area(Git)`: sol sütun (Files host'undur). `Area(Ai)`, `Area(Terminal)`, `Area(Database)`, `Area(Maven)`: sağ sütun.
 /// - `Strip(..)`: alt şeridin parçaları (Run: `RunTree`/`RunLog`/`Variables`, Git History: `Branches`/`History`).
 ///   `Messages` host'undur.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

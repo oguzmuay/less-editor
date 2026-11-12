@@ -32,6 +32,7 @@ pub fn builtin_ex(cmd: &str) -> Option<Builtin> {
         "AI" | "Claude" => Builtin::Toggle(Area::Ai),
         "Terminal" => Builtin::Toggle(Area::Terminal),
         "Datasource" => Builtin::Toggle(Area::Database),
+        "Maven" => Builtin::Toggle(Area::Maven),
         "Run" => Builtin::Toggle(Area::Run),
         "Git" => Builtin::Toggle(Area::Git),
         "GitHistory" => Builtin::Toggle(Area::GitHistory),

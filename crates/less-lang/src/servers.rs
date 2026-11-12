@@ -49,6 +49,9 @@ pub enum Method {
     /// Open VSX'teki VS Code eklentisinin son sürümü (VSIX = zip, SHA-256 doğrulanır); içindeki jar'ı çalıştıran
     /// başlatıcı betik kurulum klasörünün köküne `bins[0]` adıyla yazılır (Spring Boot Language Server).
     OpenVsx { namespace: &'static str, name: &'static str },
+    /// Jar'lar içeren arşiv; açılan klasördeki jar'larla `main` sınıfını çalıştıran başlatıcı betik kurulum
+    /// klasörünün köküne `bins[0]` adıyla yazılır (LemMinX + lemminx-maven).
+    JavaClasspath { url: &'static str, sha256: &'static str, kind: ArchiveKind, main: &'static str },
 }
 
 /// Kurulumun ön koşulu (yoksa açık bir hata verilir).
@@ -117,6 +120,13 @@ const KOTLIN_LSP: (&str, &str) = if cfg!(target_arch = "aarch64") {
     )
 };
 
+/// lemminx-maven'ın "vscode-uber-jars" dağıtımı: LemMinX 0.30.1 + Maven eklentisi + bağımlılıkları, tek zip.
+/// shortcut: sürüm sabit, yeni sürüm için adres + SHA birlikte güncellenir.
+const LEMMINX_MAVEN: (&str, &str) = (
+    "https://repo.eclipse.org/repository/lemminx-maven2-releases/org/eclipse/lemminx/lemminx-maven/0.12.0/lemminx-maven-0.12.0-vscode-uber-jars.zip",
+    "5ec30eab14a1762f9eb5b9e5424dc9937ba725dd84f1dd8290833a25967fef14",
+);
+
 static CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         id: "vtsls",
@@ -179,6 +189,20 @@ static CATALOG: &[CatalogEntry] = &[
         languages: &[L::Java, L::Yaml],
         method: Method::OpenVsx { namespace: "vmware", name: "vscode-spring-boot" },
         bins: &[("spring-boot-language-server", "spring-boot-language-server")],
+        requires: &[Prereq::Java],
+    },
+    CatalogEntry {
+        id: "lemminx",
+        name: "XML / Maven pom.xml (LemMinX + lemminx-maven)",
+        servers: &["lemminx"],
+        languages: &[L::Xml],
+        method: Method::JavaClasspath {
+            url: LEMMINX_MAVEN.0,
+            sha256: LEMMINX_MAVEN.1,
+            kind: ArchiveKind::Zip,
+            main: "org.eclipse.lemminx.XMLServerLauncher",
+        },
+        bins: &[("lemminx", "lemminx")],
         requires: &[Prereq::Java],
     },
     CatalogEntry {
@@ -430,6 +454,11 @@ impl Work<'_> {
                 self.archive(&url, sha.as_deref(), *kind, &home)?;
             }
             Method::Archive { url, sha256, kind } => self.archive(url, *sha256, *kind, &home)?,
+            Method::JavaClasspath { url, sha256, kind, main } => {
+                self.archive(url, Some(sha256), *kind, &home)?;
+                let script = classpath_launcher(&home, main).ok_or("No jars in the archive")?;
+                std::fs::write(home.join(self.entry.bins[0].1), script).map_err(|e| e.to_string())?;
+            }
             Method::OpenVsx { namespace, name } => {
                 self.progress(Some(0), "Looking up the latest version…");
                 let curl = self.tool("curl")?;
@@ -569,6 +598,28 @@ pub fn release_asset(json: &str, asset: &str) -> Option<(String, Option<String>)
     let url = a["browser_download_url"].as_str()?.to_string();
     let sha = a["digest"].as_str().and_then(|d| d.strip_prefix("sha256:")).map(str::to_string);
     Some((url, sha))
+}
+
+/// `home`'daki jar'larla `main`'i çalıştıran betik. Test jar'ları (`*-tests.jar`, JUnit) classpath'e girmez: içlerindeki
+/// `META-INF/services` kayıtları sahte eklentileri de yüklerdi.
+pub fn classpath_launcher(home: &Path, main: &str) -> Option<String> {
+    let test = |n: &str| {
+        n.ends_with("-tests.jar") || ["junit-", "opentest4j-", "apiguardian-"].iter().any(|p| n.starts_with(p))
+    };
+    let mut jars: Vec<PathBuf> = std::fs::read_dir(home)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().ends_with(".jar") && !test(&n.to_string_lossy())))
+        .collect();
+    jars.sort();
+    if jars.is_empty() {
+        return None;
+    }
+    let cp = jars.iter().map(|j| j.display().to_string()).collect::<Vec<_>>().join(":");
+    Some(format!(
+        "#!/bin/sh\nJAVA=\"${{JAVA_HOME:+$JAVA_HOME/bin/}}java\"\nexec \"$JAVA\" -Xmx512m -XX:TieredStopAtLevel=1 -cp '{cp}' {main} \"$@\"\n"
+    ))
 }
 
 /// curl `--progress-bar` çıktısındaki son yüzde (`###   45.2%`).

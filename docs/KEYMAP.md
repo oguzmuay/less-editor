@@ -11,6 +11,7 @@ Normal modda (modeless) aynı Cmd kısayolları geçerlidir; Vim'e özgü tuşla
 | Tuş | İş |
 |---|---|
 | Cmd+1 / 2 / 3 / 4 / 5 / 6 / 7 / 0 | Files / Kod / AI / Terminal / Database / Run / Git History / Git (aç, odakla, odaktaysa kapat) |
+| Cmd+M | Maven paneli (`:Maven`; Database'in yerinde): pom.xml modülleri, lifecycle ve plugin goal'ları. `j/k` gez, `Enter` / `l` çalıştır ya da aç, `h` kapat, `x` durdur, `r` yeniden tara, `n` yeni Maven projesi (`:MavenNew grup:artifact`), `q` kapat |
 | Cmd+Shift+0 | Panel boyutlarını sıfırla (`:UIReset`) |
 | Cmd+N | Notlar (Files panelinde: yeni dosya) |
 | Cmd+Shift+N | Yeni pencere |
@@ -73,7 +74,7 @@ satır sonu butonları (Run, Merge), kenar sürükleyerek boyutlandırma, durum 
 | `Space d u` / `Space d r` | Variables / REPL |
 | `Space g a` | Blame aç/kapa |
 | `:` / `/` / `?` | Pencerenin üst ortasında yüzen komut satırı (`Cmdline` / `Search`, noice gibi, #87); `:`'da öneri listesi: Tab / Shift+Tab ya da ↑↓ seç, Enter çalıştır, Esc iptal, liste kapalıyken ↑↓ geçmiş |
-| `:` komutları | `:Files :Code :AI :Terminal :Datasource :Run :Git :GitHistory :UIReset :GitBlame :Notes :Workspace :Theme :Font :CursorTrail :Shortcuts :Dashboard :R :Minimap :Preview :options` (`:options` = Options tab'ı: Language Servers — durum, Install / Update / Uninstall) |
+| `:` komutları | `:Files :Code :AI :Terminal :Datasource :Maven :MavenNew :Run :Git :GitHistory :UIReset :GitBlame :Notes :Workspace :Theme :Font :CursorTrail :Shortcuts :Dashboard :R :Minimap :Preview :options` (`:options` = Options tab'ı: Language Servers — durum, Install / Update / Uninstall) |
 
 ## Taşınmaz (bilerek)
 
