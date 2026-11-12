@@ -144,6 +144,8 @@ pub struct ProjectView {
     /// Kod alanının tab çubuğu altındaki gövdesi (arama çubuğu buraya yaslanır).
     code_rect: Rect,
     index: FileIndex,
+    /// Diskteki değişikliklerde Files ağacını yenileyen izleyici; ilk karede başlar (`None` = denenmedi).
+    files_watch: Option<Option<less_git::watch::RepoWatcher>>,
     /// En son etkin olan dosyalar, en yenisi başta (Cmd+E).
     mru: Vec<PathBuf>,
     /// Durum satırındaki mesaj (hata mı).
@@ -212,6 +214,7 @@ impl ProjectView {
             find: FindBar::default(),
             code_rect: Rect::NOTHING,
             index: FileIndex::default(),
+            files_watch: None,
             mru: Vec::new(),
             status: None,
             messages: Vec::new(),
@@ -246,6 +249,7 @@ impl ProjectView {
         self.restore_session(ui.ctx(), p);
         let ctx = ui.ctx().clone();
         self.index.poll();
+        self.watch_files(&ctx);
         self.sync_mode(edit_mode(settings.keymap));
         self.tick(&ctx, p);
         if !modal {
@@ -1225,6 +1229,21 @@ impl ProjectView {
             self.files.reveal(&path);
         }
         self.index.refresh(ctx, &self.roots);
+    }
+
+    /// Kökler altında dosya eklenip silinince (ya da değişince) Files ağacını ve dosya indeksini yeniler.
+    fn watch_files(&mut self, ctx: &egui::Context) {
+        let roots = &self.roots;
+        let watch = self.files_watch.get_or_insert_with(|| {
+            let ctx = ctx.clone();
+            less_git::watch::RepoWatcher::with_filter(roots, less_git::watch::worktree_file, move || {
+                ctx.request_repaint()
+            })
+            .ok()
+        });
+        if watch.as_ref().is_some_and(|w| w.rx.try_iter().count() > 0) {
+            self.refresh_files(ctx);
+        }
     }
 
     // ---- mesajlar ----

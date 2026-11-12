@@ -27,6 +27,11 @@ pub fn relevant(root: &Path, path: &Path) -> bool {
     }
 }
 
+/// Çalışma ağacı dosyası mı (`.git` içi hariç); Files ağacını yenilemek için.
+pub fn worktree_file(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root).is_ok_and(|rel| !rel.components().any(|c| c.as_os_str() == ".git"))
+}
+
 /// Canlı izleyici; düşürülünce izleme biter. `rx` değişen repo kökünü (verilen biçimiyle) yollar.
 pub struct RepoWatcher {
     _watcher: notify::RecommendedWatcher,
@@ -36,6 +41,15 @@ pub struct RepoWatcher {
 impl RepoWatcher {
     /// Kökleri izlemeye başlar; UI `rx.try_recv()` ile yoklar.
     pub fn new(roots: &[PathBuf]) -> Result<Self, notify::Error> {
+        Self::with_filter(roots, relevant, || {})
+    }
+
+    /// `filter(kök, yol)` doğru dönen değişiklikler için kökü yollar; her birleştirilmiş partiden sonra `wake` çağrılır.
+    pub fn with_filter(
+        roots: &[PathBuf],
+        filter: fn(&Path, &Path) -> bool,
+        wake: impl Fn() + Send + 'static,
+    ) -> Result<Self, notify::Error> {
         let pairs: Vec<(PathBuf, PathBuf)> =
             roots.iter().map(|r| (r.canonicalize().unwrap_or_else(|_| r.clone()), r.clone())).collect();
         let (raw_tx, raw_rx) = mpsc::channel::<PathBuf>();
@@ -54,7 +68,7 @@ impl RepoWatcher {
             let owner = |p: &Path| {
                 pairs
                     .iter()
-                    .filter(|(c, _)| relevant(c, p))
+                    .filter(|(c, _)| filter(c, p))
                     .max_by_key(|(c, _)| c.components().count())
                     .map(|(_, o)| o.clone())
             };
@@ -90,6 +104,7 @@ impl RepoWatcher {
                                 return;
                             }
                         }
+                        wake();
                     }
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -115,6 +130,9 @@ mod tests {
         assert!(!relevant(r, Path::new("/r/.git/objects/ab/cd")));
         assert!(!relevant(r, Path::new("/r/.git/index.lock")));
         assert!(!relevant(r, Path::new("/other/a")));
+        assert!(worktree_file(r, Path::new("/r/src/a.rs")));
+        assert!(!worktree_file(r, Path::new("/r/.git/index")));
+        assert!(!worktree_file(r, Path::new("/other/a")));
     }
 
     #[test]

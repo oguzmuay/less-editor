@@ -183,6 +183,27 @@ pub fn popups(lang: &mut Lang, tab: &mut EditorTab, geo: &CodeGeometry, ui: &mut
         }
     }
 
+    if let Some((path, text, since)) = &lang.notice {
+        let left = super::NOTICE.saturating_sub(since.elapsed());
+        if left.is_zero() {
+            lang.notice = None;
+        } else if path.is_none() || tab.path.as_ref() == path.as_ref() {
+            ctx.request_repaint_after(left);
+            let at = geo.pos_of(&rope, tab.editor.cursor()).unwrap_or(geo.text.left_top());
+            egui::Area::new(ui.scope_id().with("lang-notice"))
+                .order(Order::Tooltip)
+                .pivot(egui::Align2::LEFT_BOTTOM)
+                .fixed_pos(at - vec2(0.0, 2.0))
+                .interactable(false)
+                .constrain(true)
+                .show(&ctx, |ui| {
+                    popup_frame(&p).stroke(Stroke::new(1.0, color(p.extra.warn))).show(ui, |ui| {
+                        ui.label(egui::RichText::new(text).color(color(p.extra.warn)).size(13.0));
+                    });
+                });
+        }
+    }
+
     if let Some(menu) = &lang.menu {
         let mut chosen = None;
         let at = menu.pos.unwrap_or(below_cursor);

@@ -51,6 +51,8 @@ pub struct ServerStatus {
 const HOLD: Duration = Duration::from_millis(200);
 /// Fare aynı kelimede bu kadar bekleyince tooltip (#52, #70; Lua `MOUSE_DELAY`).
 const MOUSE_WAIT: Duration = Duration::from_millis(350);
+/// "No usages found" bildiriminin görünme süresi.
+pub(super) const NOTICE: Duration = Duration::from_millis(1800);
 
 /// Breakpoint aç/kapa konusu (B2 Run paneli dinler); veri `"<yol>:<satır, 1 tabanlı>"`.
 pub const TOPIC_TOGGLE_BREAKPOINT: &str = "run.toggle_breakpoint";
@@ -212,6 +214,8 @@ pub struct Lang {
     /// Oluktaki breakpoint'ler (0 tabanlı satır); asıl depo Run panelinde.
     breakpoints: HashSet<(PathBuf, usize)>,
     tip: Option<Tip>,
+    /// İmlecin üstünde kısa süre görünen sonuç yok bildirimi ("No usages found").
+    notice: Option<(Option<PathBuf>, String, Instant)>,
     hold: Option<(PathBuf, usize, Instant, bool)>,
     mouse: Option<MouseWait>,
     menu: Option<Menu>,
@@ -258,6 +262,7 @@ impl Lang {
             goto: None,
             breakpoints: HashSet::new(),
             tip: None,
+            notice: None,
             hold: None,
             mouse: None,
             menu: None,
@@ -500,6 +505,7 @@ impl Lang {
 
     fn key(&mut self, k: KeyEvent, tab: &mut EditorTab, session: &mut Session, cx: &mut Cx) -> bool {
         self.tip = None;
+        self.notice = None;
         let Some(menu) = &mut self.menu else { return self.completion_key(k, tab, session, cx) };
         let n = menu.items.len().max(1);
         match k.key {
@@ -666,7 +672,10 @@ impl Lang {
             .map(|l| (l.path, Pos { line: l.range.start.line, character: l.range.start.character }))
             .collect();
         match targets.as_slice() {
-            [] => cx.info(format!("No {what} found")),
+            [] => {
+                let path = cx.active.and_then(|tab| tab.path.clone());
+                self.notice = Some((path, format!("No {what} found"), Instant::now()));
+            }
             [(path, pos)] => self.go(path.clone(), *pos, cx),
             _ => {
                 let mut files: HashMap<PathBuf, Vec<String>> = HashMap::new();
@@ -854,6 +863,9 @@ impl Lang {
             || self.completion.as_ref().is_some_and(|c| !c.shown.is_empty());
         let cursor = tab.editor.cursor();
         if !matches!(&self.hold, Some((p, c, ..)) if *p == path && *c == cursor) {
+            if self.hold.is_some() {
+                self.drop_tip(Anchor::Cursor);
+            }
             self.hold = Some((path.clone(), cursor, now, false));
         }
         if let Some((_, _, since, fired)) = &mut self.hold
@@ -889,6 +901,7 @@ impl Lang {
         };
         let Some((pos, ch)) = over else {
             self.mouse = None;
+            self.drop_tip(Anchor::Mouse(egui::Pos2::ZERO));
             return;
         };
         let line = rope.char_to_line(ch);
@@ -897,6 +910,7 @@ impl Lang {
         let byte = text.char_indices().nth(col).map(|(b, _)| b);
         let key = (line, byte.and_then(|b| less_lang::tooltip::word_start(&text, b)));
         if !matches!(&self.mouse, Some(m) if m.path == path && m.key == key) {
+            self.drop_tip(Anchor::Mouse(egui::Pos2::ZERO));
             self.mouse = Some(MouseWait { path: path.clone(), key, pos, ch, since: now, fired: false });
         }
         let Some(m) = &mut self.mouse else { return };
@@ -926,6 +940,15 @@ impl Lang {
         if hover.is_some() || !diags.is_empty() || cron.is_some() {
             let tooltip = assemble(&diags, &docs(cron.as_deref(), None));
             self.tip = Some(Tip { tooltip, anchor: Anchor::Mouse(pos), path, line, hover, cron });
+        }
+    }
+}
+
+impl Lang {
+    /// Fare tooltip'i fare kelimeden ayrılınca (scroll, tık, çıkış), imleç tooltip'i imleç kayınca kapanır.
+    fn drop_tip(&mut self, kind: Anchor) {
+        if self.tip.as_ref().is_some_and(|t| std::mem::discriminant(&t.anchor) == std::mem::discriminant(&kind)) {
+            self.tip = None;
         }
     }
 }

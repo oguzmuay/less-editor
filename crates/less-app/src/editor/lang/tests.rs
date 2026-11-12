@@ -250,6 +250,12 @@ fn hover_tooltip_joins_line_diagnostics_and_doc_drops_stale_52_70() {
     lang.event(&Event::Key(KeyEvent::char('j')), &mut tab, &mut s, &mut h.cx("lang"));
     pump(&mut lang, &mut h, |l| l.pending.is_empty());
     assert!(lang.tip.is_none(), "a late hover response is dropped");
+
+    lang.tip = Some(Tip { anchor: Anchor::Mouse(egui::pos2(5.0, 5.0)), ..tip });
+    lang.drop_tip(Anchor::Cursor);
+    assert!(lang.tip.is_some(), "a cursor move keeps the mouse tooltip");
+    lang.drop_tip(Anchor::Mouse(egui::Pos2::ZERO));
+    assert!(lang.tip.is_none(), "leaving the word closes the mouse tooltip");
 }
 
 #[test]
