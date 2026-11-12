@@ -84,20 +84,31 @@ pub fn rename(note: &Note, new_name: &str) -> std::io::Result<Note> {
     Ok(Note { path, name })
 }
 
-/// Proje başına son açık not (yalnız bellekte).
+/// Son açık notun adını tutan dosya (not klasöründe; `.md` olmadığı için listede görünmez).
+const LAST_FILE: &str = ".last";
+
+/// Proje başına son açık not; yeniden başlatmada da hatırlansın diye not klasöründe `.last` dosyasında saklanır.
 #[derive(Default)]
 pub struct LastNotes(HashMap<PathBuf, PathBuf>);
 
 impl LastNotes {
+    /// Yazılamazsa yalnız bellekte kalır (son not hatırlanmaz ama not kaybolmaz).
     pub fn set(&mut self, project: &Path, note: &Path) {
         self.0.insert(project.to_path_buf(), note.to_path_buf());
+        if let (Ok(dir), Some(name)) = (dir(project), note.file_name()) {
+            let _ = std::fs::write(dir.join(LAST_FILE), name.as_encoded_bytes());
+        }
     }
 
-    /// Hatırlanan not hâlâ varsa o, yoksa listedeki ilk not.
+    /// Hatırlanan not (bellekte yoksa `.last` dosyasındaki) hâlâ varsa o, yoksa listedeki ilk not.
     pub fn current(&self, project: &Path) -> Option<Note> {
         let notes = list(project).ok()?;
-        let last = self.0.get(project);
-        notes.iter().find(|n| Some(&n.path) == last).or(notes.first()).cloned()
+        let last = self.0.get(project).cloned().or_else(|| {
+            let dir = dir(project).ok()?;
+            let name = std::fs::read_to_string(dir.join(LAST_FILE)).ok()?;
+            Some(dir.join(name.trim()))
+        });
+        notes.iter().find(|n| Some(&n.path) == last.as_ref()).or(notes.first()).cloned()
     }
 }
 
@@ -152,6 +163,7 @@ mod tests {
         assert!(last.current(&p).is_some());
         last.set(&p, &b.path);
         assert_eq!(last.current(&p).unwrap().name, "b");
+        assert_eq!(LastNotes::default().current(&p).unwrap().name, "b", "survives a restart");
         delete(&b).unwrap();
         assert_eq!(last.current(&p).unwrap(), a);
         let _ = std::fs::remove_dir_all(&p);

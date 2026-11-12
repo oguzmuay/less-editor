@@ -53,6 +53,8 @@ pub struct NotesWindow {
     last: LastNotes,
     name_prompt: Option<NamePrompt>,
     confirm_delete: bool,
+    /// Bir sonraki karede not editörü odak alsın (açılış, tab değişimi).
+    focus_editor: bool,
     messages: Vec<(String, bool)>,
 }
 
@@ -117,6 +119,7 @@ impl NotesWindow {
                     .collect();
                 self.active = selected.and_then(|path| self.tabs.iter().position(|t| t.note.path == path)).unwrap_or(0);
                 self.open = !self.tabs.is_empty();
+                self.focus_editor = true;
                 if let Some(tab) = self.tabs.get(self.active) {
                     self.last.set(project, &tab.note.path);
                 }
@@ -158,6 +161,7 @@ impl NotesWindow {
         }
         self.save_current();
         self.active = index;
+        self.focus_editor = true;
         self.remember_active();
     }
 
@@ -364,6 +368,10 @@ impl NotesWindow {
                         .desired_width(ui.available_width())
                         .desired_rows((ui.available_height() / 22.0).max(8.0) as usize)
                         .show(ui);
+                    if self.focus_editor && self.name_prompt.is_none() && !self.confirm_delete {
+                        self.focus_editor = false;
+                        response.response.request_focus();
+                    }
                     if response.response.changed() {
                         tab.dirty = true;
                         tab.edited_at = Some(Instant::now());
