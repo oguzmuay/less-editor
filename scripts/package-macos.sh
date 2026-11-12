@@ -30,7 +30,8 @@ target=${CARGO_TARGET_DIR:-target}
 case "$target" in /*) ;; *) target="$repo/$target" ;; esac
 binary="$target/release/less-rs"
 [ -x "$binary" ] || { printf 'Missing release binary: %s\n' "$binary" >&2; exit 1; }
-version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$repo/Cargo.toml")
+# LESS_VERSION (e.g. from a release tag) overrides the workspace version.
+version=${LESS_VERSION:-$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$repo/Cargo.toml")}
 [ -n "$version" ] || { printf 'Could not read workspace version.\n' >&2; exit 1; }
 
 app="$repo/build/LESS-rs.app"
@@ -39,7 +40,7 @@ contents="$app/Contents"
 rm -rf "$app"
 mkdir -p "$contents/MacOS" "$contents/Resources" "$out"
 install -m 755 "$binary" "$contents/MacOS/less-rs"
-cp "$repo/../LICENSE" "$contents/Resources/LICENSE"
+cp "$repo/LICENSE" "$contents/Resources/LICENSE"
 cp "$repo/crates/less-app/assets/Phosphor-LICENSE.txt" "$contents/Resources/Phosphor-LICENSE.txt"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/less-rs-package.XXXXXX")
