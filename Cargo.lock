@@ -2095,7 +2095,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "less-ai"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "alacritty_terminal",
  "notify",
@@ -2107,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "less-app"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arboard",
  "eframe",
@@ -2134,7 +2134,7 @@ dependencies = [
 
 [[package]]
 name = "less-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "regex",
  "ropey",
@@ -2142,7 +2142,7 @@ dependencies = [
 
 [[package]]
 name = "less-db"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "less-driver-postgres"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "less-db",
  "postgres",
@@ -2163,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "less-driver-sqlite"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "less-db",
  "rusqlite",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "less-git"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "notify",
  "similar",
@@ -2182,14 +2182,14 @@ dependencies = [
 
 [[package]]
 name = "less-input"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "less-core",
 ]
 
 [[package]]
 name = "less-lang"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "lsp-types",
  "serde",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "less-run"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "nix",
  "portable-pty",
@@ -2232,11 +2232,11 @@ dependencies = [
 
 [[package]]
 name = "less-theme"
-version = "0.3.1"
+version = "0.3.2"
 
 [[package]]
 name = "less-workbench"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "less-workspace",
  "serde",
@@ -2245,7 +2245,7 @@ dependencies = [
 
 [[package]]
 name = "less-workspace"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",
