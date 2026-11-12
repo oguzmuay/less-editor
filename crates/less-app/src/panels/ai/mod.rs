@@ -215,8 +215,9 @@ impl AiPanel {
         })
     }
 
+    /// Tek kökte o kök, çok köklü workspace'te köklerin ortak üst klasörü; ortak klasör home ya da kök dizinse ilk kök.
     fn cwd(cx: &Cx) -> PathBuf {
-        cx.roots.first().cloned().unwrap_or_else(less_ai::paths::home)
+        common_dir(cx.roots, &less_ai::paths::home()).unwrap_or_else(less_ai::paths::home)
     }
 
     fn current(&mut self, g: Group) -> Option<Item> {
@@ -868,6 +869,14 @@ impl Panel for AiPanel {
                 let term = self.tabs.as_ref().and_then(|t| t.terminal(id)).cloned();
                 match term {
                     Some(term) => {
+                        let (files, at) = cx.ctx.input(|i| {
+                            let files: Vec<PathBuf> =
+                                i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect();
+                            (files, i.pointer.latest_pos())
+                        });
+                        if !files.is_empty() && at.map_or(g == Group::Ai, |p| body.contains(p)) {
+                            term.paste(&drop_text(&files));
+                        }
                         let size = self.views.entry(id).or_default().show(&mut child, &term, cx.palette, cx.focused);
                         self.tabs(cx.ctx).default_size = size;
                     }
@@ -903,5 +912,42 @@ impl Panel for AiPanel {
             }
             _ => false,
         }
+    }
+}
+
+/// Köklerin ortak üst klasörü; tek kök kendisi, ortak klasör `home` ya da `/` ise ilk kök.
+fn common_dir(roots: &[PathBuf], home: &Path) -> Option<PathBuf> {
+    let first = roots.first()?;
+    let mut common = first.clone();
+    for root in &roots[1..] {
+        while !root.starts_with(&common) {
+            common.pop();
+        }
+    }
+    Some(if common == home || common.parent().is_none() { first.clone() } else { common })
+}
+
+/// Bırakılan dosya yollarını kabuk/ajan istemine yapıştırılacak metne çevirir (boşluklar `\` ile kaçırılır).
+fn drop_text(files: &[PathBuf]) -> String {
+    files.iter().map(|f| f.to_string_lossy().replace(' ', "\\ ")).collect::<Vec<_>>().join(" ") + " "
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+
+    #[test]
+    fn common_dir_picks_shared_parent() {
+        let home = Path::new("/Users/u");
+        let roots: Vec<PathBuf> = ["/Users/u/p/iflow/ssr", "/Users/u/p/iflow/be"].iter().map(PathBuf::from).collect();
+        assert_eq!(common_dir(&roots, home), Some(PathBuf::from("/Users/u/p/iflow")));
+        assert_eq!(common_dir(&roots[..1], home), Some(roots[0].clone()));
+        let far: Vec<PathBuf> = ["/Users/u/a", "/Users/u/b"].iter().map(PathBuf::from).collect();
+        assert_eq!(common_dir(&far, home), Some(PathBuf::from("/Users/u/a")));
+    }
+
+    #[test]
+    fn drop_text_escapes_spaces() {
+        assert_eq!(drop_text(&[PathBuf::from("/a b/c.png")]), "/a\\ b/c.png ");
     }
 }
