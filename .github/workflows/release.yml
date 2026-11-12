@@ -1,6 +1,6 @@
 name: Release
 
-# Tag push v* -> build a universal macOS LESS-rs.app (zip + dmg) and publish a GitHub Release.
+# Tag push v* -> build a universal macOS LESS.app (zip + dmg) and publish a GitHub Release.
 # workflow_dispatch -> same build as a downloadable workflow artifact, no release.
 # Builds are ad-hoc signed and not notarized.
 on:
@@ -78,12 +78,12 @@ jobs:
           cat >"$RUNNER_TEMP/notes.md" <<EOF
           ## Install
 
-          **macOS 12+ (Apple silicon and Intel):** download \`LESS-rs-$VERSION-macos-universal.dmg\` (or \`.zip\`) and drag LESS-rs.app to Applications.
+          **macOS 12+ (Apple silicon and Intel):** download \`LESS-$VERSION-macos-universal.dmg\` (or \`.zip\`) and drag LESS.app to Applications.
 
           This build is ad-hoc signed and not notarized, so macOS may report it as "damaged" or from an unidentified developer. Clear the download flag once:
 
           \`\`\`
-          xattr -dr com.apple.quarantine /Applications/LESS-rs.app
+          xattr -dr com.apple.quarantine /Applications/LESS.app
           \`\`\`
 
           Verify downloads with \`SHA256SUMS.txt\`.
@@ -91,7 +91,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          name: LESS-rs ${{ env.VERSION }}
+          name: LESS ${{ env.VERSION }}
           body_path: ${{ runner.temp }}/notes.md
           generate_release_notes: true
           prerelease: ${{ contains(env.VERSION, '-') }}

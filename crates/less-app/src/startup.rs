@@ -144,7 +144,7 @@ pub fn adopt_login_env() {
 #[cfg(not(unix))]
 pub fn adopt_login_env() {}
 
-pub const HELP: &str = "LESS-rs\n\nUsage: less-rs [FOLDER]\n       less-rs --workspace NAME\n       less-rs --dashboard\n\nOptions:\n  -h, --help       Show this help\n  -V, --version    Show the version";
+pub const HELP: &str = "LESS\n\nUsage: less-rs [FOLDER]\n       less-rs --workspace NAME\n       less-rs --dashboard\n\nOptions:\n  -h, --help       Show this help\n  -V, --version    Show the version";
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,4 @@
-# LESS-rs
+# LESS
 
 LESS editörünün (Ghostty fork'u + Neovim yapılandırması) **tamamen Rust ile yeniden yazımı**. Amaç: `../nvim/` altındaki
 tüm özellikleri (bkz. [`../FEATURES.md`](../FEATURES.md)) tek bir yerel uygulamada, Neovim ve Lua'ya bağımlı olmadan sunmak.
@@ -71,9 +71,9 @@ cargo run -p less-app -- --workspace ad
 make check                            # workspace cargo check
 make test                             # workspace testleri
 make clippy                           # bütün hedefler, uyarılar hata
-make app                              # build/LESS-rs.app
+make app                              # build/LESS.app
 make dist                             # build/dist/*.zip ve *.dmg
-make install                          # /Applications/LESS-rs.app (PREFIX değiştirilebilir)
+make install                          # /Applications/LESS.app (PREFIX değiştirilebilir)
 ```
 
 `make app` / `make dist` release ikilisini derler, uygulama paketini kurar ve **ad-hoc imzalar**. Developer ID imzası ve

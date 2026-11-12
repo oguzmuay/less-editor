@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a local LESS-rs.app, and optionally a zip + DMG. No upload, Developer ID signing, or notarization.
+# Build a local LESS.app, and optionally a zip + DMG. No upload, Developer ID signing, or notarization.
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -34,12 +34,12 @@ binary="$target/release/less-rs"
 version=${LESS_VERSION:-$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$repo/Cargo.toml")}
 [ -n "$version" ] || { printf 'Could not read workspace version.\n' >&2; exit 1; }
 
-app="$repo/build/LESS-rs.app"
+app="$repo/build/LESS.app"
 out="$repo/build/dist"
 contents="$app/Contents"
 rm -rf "$app"
 mkdir -p "$contents/MacOS" "$contents/Resources" "$out"
-install -m 755 "$binary" "$contents/MacOS/less-rs"
+install -m 755 "$binary" "$contents/MacOS/LESS"
 cp "$repo/LICENSE" "$contents/Resources/LICENSE"
 cp "$repo/crates/less-app/assets/Phosphor-LICENSE.txt" "$contents/Resources/Phosphor-LICENSE.txt"
 
@@ -60,10 +60,10 @@ cat >"$contents/Info.plist" <<PLIST
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleDisplayName</key><string>LESS</string>
-  <key>CFBundleExecutable</key><string>less-rs</string>
+  <key>CFBundleExecutable</key><string>LESS</string>
   <key>CFBundleIconFile</key><string>less</string>
   <key>CFBundleIdentifier</key><string>com.oguz-dev.less-rs</string>
-  <key>CFBundleName</key><string>LESS-rs</string>
+  <key>CFBundleName</key><string>LESS</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -82,21 +82,21 @@ case "$archs" in
   *arm64*x86_64*|*x86_64*arm64*) arch=universal ;;
   *) arch=$archs ;;
 esac
-name="LESS-rs-$version-macos-$arch"
+name="LESS-$version-macos-$arch"
 readme="$work/README.txt"
 cat >"$readme" <<'README'
-LESS-rs — local development build
+LESS — local development build
 
-Drag LESS-rs.app to Applications or run it directly.
+Drag LESS.app to Applications or run it directly.
 This package is ad-hoc signed and is not notarized. macOS may ask for confirmation.
 No database drivers are bundled; optional drivers require separate approval and verification.
 README
 stage="$work/dmg"
 mkdir -p "$stage"
-ditto "$app" "$stage/LESS-rs.app"
+ditto "$app" "$stage/LESS.app"
 cp "$readme" "$stage/README.txt"
 ln -s /Applications "$stage/Applications"
 rm -f "$out/$name.zip" "$out/$name.dmg"
 ditto -c -k --keepParent "$app" "$out/$name.zip"
-hdiutil create -quiet -volname "LESS-rs $version" -srcfolder "$stage" -ov -format UDZO "$out/$name.dmg"
+hdiutil create -quiet -volname "LESS $version" -srcfolder "$stage" -ov -format UDZO "$out/$name.dmg"
 printf 'Built %s and %s (not notarized; no upload performed).\n' "$out/$name.zip" "$out/$name.dmg"

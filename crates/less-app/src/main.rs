@@ -41,7 +41,7 @@ fn main() -> eframe::Result {
             return Ok(());
         }
         Ok(startup::ParseOutcome::Version) => {
-            println!("less-rs {}", env!("CARGO_PKG_VERSION"));
+            println!("LESS {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Err(error) => {

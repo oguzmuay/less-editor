@@ -25,8 +25,8 @@ run:
 	$(CARGO) run -p less-app
 
 install: app
-	ditto build/LESS-rs.app $(PREFIX)/LESS-rs.app
-	@echo "Installed $(PREFIX)/LESS-rs.app (ad-hoc signed; not notarized)"
+	ditto build/LESS.app $(PREFIX)/LESS.app
+	@echo "Installed $(PREFIX)/LESS.app (ad-hoc signed; not notarized)"
 
 clean:
 	rm -rf build
