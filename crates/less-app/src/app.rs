@@ -63,6 +63,7 @@ impl LessApp {
     pub fn new(cc: &eframe::CreationContext<'_>, started: Instant, launch: Launch) -> Self {
         let settings = Settings::load();
         let palette = less_theme::by_id(&settings.theme);
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         fonts::install(&cc.egui_ctx, &settings.font);
         apply_visuals(&cc.egui_ctx, &palette);
         let logo = load_logo(&cc.egui_ctx);

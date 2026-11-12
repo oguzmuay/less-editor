@@ -947,12 +947,12 @@ impl ProjectView {
     }
 
     /// Pin görünümünü ve proje deposunu birlikte günceller; adsız tab'lar yalnız oturumda pinlidir (#30).
-    /// #83: Markdown tab'ında önizlemeyi aç / kapat, HTML dosyasını varsayılan tarayıcıda aç; başka dosyada `false`.
+    /// #83: Markdown / SVG tab'ında önizlemeyi aç / kapat, HTML dosyasını varsayılan tarayıcıda aç; başka dosyada `false`.
     fn preview(&mut self, ctx: &egui::Context) -> bool {
         let Some(tab) = self.tabs.active_editor_mut() else { return false };
         let ext = tab.path.as_deref().and_then(Path::extension).and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
         match ext.as_deref() {
-            Some("md" | "markdown" | "mdx") => {
+            Some("md" | "markdown" | "mdx" | "svg") => {
                 tab.md_preview = !tab.md_preview;
                 true
             }
@@ -1698,6 +1698,10 @@ impl ProjectView {
         let Some(tab) = self.tabs.active_editor_mut() else { return };
         if tab.md_preview {
             let text = tab.editor.buffer.rope().to_string();
+            if tab.path.as_deref().and_then(Path::extension).is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+                crate::editor::markdown::show_svg(ui, &text);
+                return;
+            }
             let id = ("md-preview", tab.path.clone());
             if let Some(url) = crate::editor::markdown::show(ui, p, &text, id) {
                 self.open_link(&url, ctx, p);

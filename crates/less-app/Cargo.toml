@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 arboard = { version = "3.7", default-features = false }
 eframe = "0.37"
+egui_extras = { version = "0.37", features = ["svg"] }
 less-ai = { path = "../less-ai" }
 less-core = { path = "../less-core" }
 less-db = { path = "../less-db" }

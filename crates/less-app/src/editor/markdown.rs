@@ -18,6 +18,21 @@ struct Inline {
     link: Option<String>,
 }
 
+/// SVG kaynağını sığacak boyutta çizer; kaynak değişince adres de değişir, böylece önbellek yenilenir.
+pub fn show_svg(ui: &mut Ui, text: &str) {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    let uri = format!("bytes://preview-{:x}.svg", hasher.finish());
+    egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+        ui.add(
+            egui::Image::from_bytes(uri, text.as_bytes().to_vec())
+                .fit_to_original_size(1.0)
+                .max_size(ui.available_size()),
+        );
+    });
+}
+
 /// Önizleme bloğu.
 #[derive(Clone, Debug, PartialEq)]
 enum Block {
