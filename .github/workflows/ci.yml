@@ -22,7 +22,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          # rust-analyzer: project tests open a .rs file; without it the LSP notice overwrites the status line.
+          components: rustfmt, clippy, rust-analyzer
 
       - uses: Swatinem/rust-cache@v2
 
