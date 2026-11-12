@@ -177,3 +177,48 @@ fn release_json_and_curl_progress_parse() {
     assert_eq!(curl_percent("\r###      12.5%\r########   45.0%"), Some(45));
     assert_eq!(curl_percent("\r#=#=#"), None);
 }
+
+#[test]
+fn spring_launcher_runs_the_exec_jar_and_open_vsx_json_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(spring_launcher(tmp.path()).is_none(), "no jar yet");
+    let dir = tmp.path().join("extension/language-server");
+    std::fs::create_dir_all(dir.join("lib")).unwrap();
+    std::fs::write(dir.join("spring-boot-language-server-2.5.0-SNAPSHOT-exec.jar"), "").unwrap();
+    let script = spring_launcher(tmp.path()).unwrap();
+    assert!(script.starts_with("#!/bin/sh\n"));
+    assert!(script.contains("-Dsts.lsp.client=vscode"));
+    assert!(
+        script
+            .contains(&format!("-jar '{}'", dir.join("spring-boot-language-server-2.5.0-SNAPSHOT-exec.jar").display()))
+    );
+    let ok = Command::new("sh").arg("-n").arg("-c").arg(&script).status().unwrap();
+    assert!(ok.success(), "valid shell:\n{script}");
+    let json = r#"{"version":"2.5","files":{"download":"https://x/a.vsix","sha256":"https://x/a.sha256"}}"#;
+    assert_eq!(open_vsx_files(json), Some(("https://x/a.vsix".into(), "https://x/a.sha256".into())));
+}
+
+/// Gerçek kurulum (Options'taki Install düğmesiyle aynı): `LESS_REAL_INSTALL=<katalog kimliği>`; ağ kullanır.
+#[test]
+#[ignore]
+fn real_install() {
+    let id = std::env::var("LESS_REAL_INSTALL").expect("set LESS_REAL_INSTALL to a catalog id");
+    let entry = catalog().iter().find(|e| e.id == id).expect("unknown catalog id");
+    let mut inst = Installer::from_env();
+    inst.start(entry, Job::Install).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(900);
+    loop {
+        for ev in inst.poll() {
+            match ev {
+                InstallEvent::Progress { message, .. } => eprintln!("{message}"),
+                InstallEvent::Finished { result, .. } => {
+                    result.unwrap();
+                    eprintln!("{:?}", status(entry, inst.dir(), &inst.config()));
+                    return;
+                }
+            }
+        }
+        assert!(Instant::now() < deadline, "install timed out");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}

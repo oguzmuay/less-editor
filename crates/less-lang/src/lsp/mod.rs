@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 
 use crate::diagnostics::{Diagnostic, DiagnosticStore};
 use crate::language::Language;
+pub use connection::Waker;
 use connection::{Connection, Incoming};
 use jsonrpc::Message;
 pub use registry::{LspConfig, ServerSpec};
@@ -187,11 +188,17 @@ enum Kind {
     Formatting,
     SemanticTokens,
     Raw,
+    /// Başka sunucunun isteği adına gönderildi; yanıt `Pending::reply`'a aktarılır.
+    Relay,
+    /// Yöneticinin kendi isteği (Spring Boot classpath dinlemesini açma); yanıt yok sayılır.
+    Internal,
 }
 
 struct Pending {
     kind: Kind,
     id: RequestId,
+    /// Yanıtın aktarılacağı sunucu ve onun istek kimliği ([`Kind::Relay`]).
+    reply: Option<(ServerKey, Value)>,
 }
 
 struct Server {
@@ -221,9 +228,20 @@ impl Server {
     }
 
     fn request(&mut self, method: &str, params: Value, kind: Kind, id: RequestId) {
+        self.request_for(method, params, kind, id, None);
+    }
+
+    fn request_for(
+        &mut self,
+        method: &str,
+        params: Value,
+        kind: Kind,
+        id: RequestId,
+        reply: Option<(ServerKey, Value)>,
+    ) {
         self.next_id += 1;
         let n = self.next_id;
-        self.pending.insert(n, Pending { kind, id });
+        self.pending.insert(n, Pending { kind, id, reply });
         let msg = json!({ "jsonrpc": "2.0", "id": n, "method": method, "params": params });
         if kind == Kind::Initialize { self.conn.send(msg) } else { self.send(msg) }
     }
@@ -288,6 +306,11 @@ pub struct LspManager {
     progress: HashMap<ServerKey, HashSet<String>>,
     /// Kapanmış sunucular (yeniden başlatılınca listeden çıkar).
     exited: Vec<ServerKey>,
+    waker: Waker,
+    /// Birden çok sunucuya giden hover: kalan yanıt sayısı ve gelen sonuçlar (hepsi gelince tek yanıt olur).
+    hover_groups: HashMap<RequestId, (usize, Vec<Value>)>,
+    /// jdtls'in Spring Boot projesi bulduğunu bildirdiği (`vscode-spring-boot.ls.start`) kökler.
+    boot_roots: HashSet<PathBuf>,
 }
 
 /// Bir sunucunun durum satırındaki hali.
@@ -316,7 +339,57 @@ impl LspManager {
             outbox: Vec::new(),
             progress: HashMap::new(),
             exited: Vec::new(),
+            waker: Waker::default(),
+            hover_groups: HashMap::new(),
+            boot_roots: HashSet::new(),
         }
+    }
+
+    /// Sunucudan mesaj gelince çağrılacak işlev (UI'de `request_repaint`); yalnız ilk çağrı geçerli.
+    pub fn set_waker(&self, wake: impl Fn() + Send + Sync + 'static) {
+        let _ = self.waker.set(Box::new(wake));
+    }
+
+    /// Spring Boot Language Server'ı açar / kapatır. jdtls'in Spring bundle'ları da değiştiği için Spring ve jdtls
+    /// sunucuları durdurulup açık belgeler ([`LspManager::retry_missing`]) yeniden bağlanır; yeniden açılan yollar döner.
+    pub fn set_spring_boot(&mut self, on: bool, texts: &HashMap<PathBuf, String>) -> Vec<PathBuf> {
+        if self.config.spring_boot == on {
+            return Vec::new();
+        }
+        self.config.spring_boot = on;
+        self.restart_java(texts)
+    }
+
+    /// jdtls'in içe aktarma modunu değiştirir ([`LspConfig::java_on_demand`]); Java sunucuları yeniden başlar.
+    pub fn set_java_on_demand(&mut self, on: bool, texts: &HashMap<PathBuf, String>) -> Vec<PathBuf> {
+        if self.config.java_on_demand == on {
+            return Vec::new();
+        }
+        self.config.java_on_demand = on;
+        self.restart_java(texts)
+    }
+
+    /// Spring ve jdtls sunucularını durdurur, açık belgeleri yeniden bağlar; yeniden açılan yollar döner.
+    fn restart_java(&mut self, texts: &HashMap<PathBuf, String>) -> Vec<PathBuf> {
+        let stop: Vec<ServerKey> =
+            self.servers.keys().filter(|k| k.server == "spring_boot" || k.server == "jdtls").cloned().collect();
+        let mut events = Vec::new();
+        for key in stop {
+            if let Some(mut server) = self.servers.remove(&key) {
+                server.conn.send(json!({ "jsonrpc": "2.0", "method": "exit" }));
+                server.conn.kill();
+                self.forget(&key, server.pending, &mut events);
+            }
+        }
+        self.outbox.extend(events);
+        self.retry_missing(texts)
+    }
+
+    /// Belgeye bağlanacak ek sunucular (Spring Boot ayarı kapalıysa o hariç).
+    fn extras(&self, lang: Language) -> Vec<ServerSpec> {
+        let mut specs = registry::linters_for(lang);
+        specs.retain(|s| s.id != "spring_boot" || self.config.spring_boot);
+        specs
     }
 
     pub fn diagnostics(&self) -> &DiagnosticStore {
@@ -366,7 +439,7 @@ impl LspManager {
             .iter()
             .filter(|(path, d)| {
                 let wanted = registry::server_for(d.lang).is_some() as usize
-                    + registry::linters_for(d.lang).iter().filter(|s| registry::extra_root(s, path).is_some()).count();
+                    + self.extras(d.lang).iter().filter(|s| registry::extra_root(s, path).is_some()).count();
                 d.keys().count() < wanted
             })
             .map(|(p, d)| (p.clone(), d.lang))
@@ -396,7 +469,14 @@ impl LspManager {
         settings: Value,
     ) -> ServerKey {
         let key = ServerKey { server, root: root.to_path_buf() };
-        let conn = Connection::from_streams(reader, writer, key.clone(), settings.clone(), self.tx.clone());
+        let conn = Connection::from_streams(
+            reader,
+            writer,
+            key.clone(),
+            settings.clone(),
+            self.tx.clone(),
+            self.waker.clone(),
+        );
         self.install(key.clone(), conn, settings, Value::Null);
         key
     }
@@ -414,6 +494,9 @@ impl LspManager {
         };
         let params = initialize_params(&key.root, init_options);
         server.request("initialize", params, Kind::Initialize, RequestId(0));
+        if key.server == "spring_boot" && self.boot_roots.contains(&key.root) {
+            enable_classpath(&mut server, true);
+        }
         self.exited.retain(|k| *k != key);
         self.progress.remove(&key);
         self.servers.insert(key, server);
@@ -439,14 +522,7 @@ impl LspManager {
             self.outbox.push(LspEvent::ServerWarning { server: spec.id, message });
         }
         let path = self.config.child_path();
-        match Connection::spawn(
-            &launch.program,
-            &launch.args,
-            &path,
-            key.clone(),
-            launch.settings.clone(),
-            self.tx.clone(),
-        ) {
+        match Connection::spawn(&launch, &path, key.clone(), self.tx.clone(), self.waker.clone()) {
             Ok(conn) => {
                 self.install(key.clone(), conn, launch.settings, launch.init_options);
                 Some(key)
@@ -470,20 +546,26 @@ impl LspManager {
             let root = registry::root_for(&spec, path);
             self.ensure_server(lang, spec, root)
         });
-        let linters: Vec<ServerKey> = registry::linters_for(lang)
+        let linters: Vec<ServerKey> = self
+            .extras(lang)
             .into_iter()
             .filter_map(|spec| {
                 let root = registry::extra_root(&spec, path)?;
                 self.ensure_server(lang, spec, root)
             })
             .collect();
+        let (server, linters) = promote(server, linters);
         let doc = Doc { lang, version: 0, server, linters };
         let open = json!({ "textDocument": {
             "uri": uri::path_to_uri(path), "languageId": lang.lsp_id(), "version": 0, "text": text
         }});
         for key in doc.keys() {
             if let Some(s) = self.servers.get_mut(key) {
-                s.notify("textDocument/didOpen", open.clone());
+                let mut open = open.clone();
+                if key.server == "spring_boot" {
+                    open["textDocument"]["languageId"] = json!(registry::spring_language_id(lang));
+                }
+                s.notify("textDocument/didOpen", open);
                 s.pull(path);
             }
         }
@@ -588,8 +670,90 @@ impl LspManager {
         json!({ "textDocument": { "uri": uri::path_to_uri(path) }, "position": pos })
     }
 
+    /// Hover ana sunucuya ve hover veren hazır ek sunuculara (Spring Boot) gider; tüm yanıtlar gelince içerikleri
+    /// birleştirilip tek [`LspResult::Hover`] olarak döner.
     pub fn hover(&mut self, path: &Path, pos: Position) -> Option<RequestId> {
-        self.doc_request(path, "hoverProvider", "textDocument/hover", Self::text_position(path, pos), Kind::Hover)
+        let params = Self::text_position(path, pos);
+        let id = self.doc_request(path, "hoverProvider", "textDocument/hover", params.clone(), Kind::Hover)?;
+        let extras: Vec<ServerKey> = self.docs.get(path).map(|d| d.linters.clone()).unwrap_or_default();
+        let mut sent = 1;
+        for key in extras {
+            if let Some(server) = self.servers.get_mut(&key).filter(|s| s.ready && s.supports("hoverProvider")) {
+                server.request("textDocument/hover", params.clone(), Kind::Hover, id);
+                sent += 1;
+            }
+        }
+        if sent > 1 {
+            self.hover_groups.insert(id, (sent, Vec::new()));
+        }
+        Some(id)
+    }
+
+    /// Gruplu hover'ın bir yanıtı (`None` = hata / sunucu kapandı); son yanıtta birleşik sonuç yayınlanır. Grup yoksa
+    /// `false`.
+    fn hover_part(&mut self, id: RequestId, key: &ServerKey, value: Option<Value>, events: &mut Vec<LspEvent>) -> bool {
+        let Some((left, parts)) = self.hover_groups.get_mut(&id) else { return false };
+        parts.extend(value);
+        *left -= 1;
+        if *left == 0
+            && let Some((_, parts)) = self.hover_groups.remove(&id)
+        {
+            let mut contents = Vec::new();
+            for part in parts {
+                match &part["contents"] {
+                    Value::Array(items) => contents.extend(items.iter().cloned()),
+                    Value::Null => {}
+                    single => contents.push(single.clone()),
+                }
+            }
+            let raw = if contents.is_empty() { Value::Null } else { json!({ "contents": contents }) };
+            events.push(LspEvent::Response { id, key: key.clone(), result: convert(Kind::Hover, raw) });
+        }
+        true
+    }
+
+    /// `server` türünde çalışan sunucu; aynı kökteki öncelikli.
+    fn peer(&self, root: &Path, server: &str) -> Option<ServerKey> {
+        let mut keys = self.servers.keys().filter(|k| k.server == server);
+        keys.clone().find(|k| k.root == root).or_else(|| keys.next()).cloned()
+    }
+
+    /// Aktarılan sunucu isteği ([`Incoming::Request`]): Spring Boot'un Java verisi istekleri jdtls'e, jdtls'in classpath
+    /// geri çağrıları Spring Boot'a gider; karşı sunucu yoksa `null` ile yanıtlanır (jdtls yanıtı süresiz bekler).
+    fn relay(&mut self, from: ServerKey, id: Value, method: &str, params: Value) {
+        let (target, forward) = if method == "workspace/executeClientCommand" {
+            let command = params["command"].as_str().unwrap_or_default().to_string();
+            if let Some(state) = command.strip_prefix("vscode-spring-boot.ls.") {
+                let start = state == "start";
+                if start {
+                    self.boot_roots.insert(from.root.clone());
+                } else {
+                    self.boot_roots.remove(&from.root);
+                }
+                if let Some(spring) = self.peer(&from.root, "spring_boot").and_then(|k| self.servers.get_mut(&k)) {
+                    enable_classpath(spring, start);
+                }
+                (None, None)
+            } else {
+                let params = json!({ "command": command, "arguments": params["arguments"] });
+                (self.peer(&from.root, "spring_boot"), Some(params))
+            }
+        } else {
+            let forward = sts_command(method, &params)
+                .map(|(command, arguments)| json!({ "command": command, "arguments": arguments }));
+            (self.peer(&from.root, "jdtls"), forward)
+        };
+        let fallback = if method == "sts/moveCursor" { json!({ "applied": true }) } else { Value::Null };
+        match (target.and_then(|k| self.servers.get_mut(&k)), forward) {
+            (Some(server), Some(params)) => {
+                server.request_for("workspace/executeCommand", params, Kind::Relay, RequestId(0), Some((from, id)))
+            }
+            _ => {
+                if let Some(server) = self.servers.get(&from) {
+                    server.conn.send(json!({ "jsonrpc": "2.0", "id": id, "result": fallback }));
+                }
+            }
+        }
     }
 
     pub fn definition(&mut self, path: &Path, pos: Position) -> Option<RequestId> {
@@ -796,6 +960,7 @@ impl LspManager {
                 self.on_notification(key, &method, params, events)
             }
             Incoming::Message(_, Message::Request { .. }) => {}
+            Incoming::Request(key, id, method, params) => self.relay(key, id, &method, params),
             Incoming::Answered(key, method, params) => match method.as_str() {
                 "workspace/applyEdit" => events.push(LspEvent::ApplyEdit {
                     key,
@@ -814,24 +979,40 @@ impl LspManager {
                 let Some(mut server) = self.servers.remove(&key) else { return };
                 let code = server.conn.exit_code();
                 let stderr = server.conn.stderr_tail();
-                let paths: Vec<PathBuf> = self.diagnostics.files().map(Path::to_path_buf).collect();
-                self.diagnostics.clear_server(&key.store_id());
-                for path in paths {
-                    if self.diagnostics.get(&path).is_empty() {
-                        events.push(LspEvent::Diagnostics { path });
-                    }
-                }
-                for doc in self.docs.values_mut() {
-                    if doc.server.as_ref() == Some(&key) {
-                        doc.server = None;
-                    }
-                    doc.linters.retain(|k| *k != key);
-                }
-                self.progress.remove(&key);
+                self.forget(&key, std::mem::take(&mut server.pending), events);
                 if !self.exited.contains(&key) {
                     self.exited.push(key.clone());
                 }
                 events.push(LspEvent::ServerExited { key, code, stderr });
+            }
+        }
+    }
+
+    /// Kaldırılan sunucunun izlerini siler: diagnostikleri, belge bağlantıları, ilerlemesi; bekleyen gruplu hover'lar
+    /// tamamlanır, onun adına bekleyen aktarılmış istekler `null` ile yanıtlanır.
+    fn forget(&mut self, key: &ServerKey, pending: HashMap<i64, Pending>, events: &mut Vec<LspEvent>) {
+        let paths: Vec<PathBuf> = self.diagnostics.files().map(Path::to_path_buf).collect();
+        self.diagnostics.clear_server(&key.store_id());
+        for path in paths {
+            if self.diagnostics.get(&path).is_empty() {
+                events.push(LspEvent::Diagnostics { path });
+            }
+        }
+        for doc in self.docs.values_mut() {
+            if doc.server.as_ref() == Some(key) {
+                doc.server = None;
+            }
+            doc.linters.retain(|k| k != key);
+        }
+        self.progress.remove(key);
+        for p in pending.into_values() {
+            if p.kind == Kind::Hover {
+                self.hover_part(p.id, key, None, events);
+            }
+            if let Some((to, id)) = p.reply
+                && let Some(server) = self.servers.get(&to)
+            {
+                server.conn.send(json!({ "jsonrpc": "2.0", "id": id, "result": null }));
             }
         }
     }
@@ -845,6 +1026,25 @@ impl LspManager {
     ) {
         let Some(server) = self.servers.get_mut(&key) else { return };
         let Some(pending) = id.as_i64().and_then(|n| server.pending.remove(&n)) else { return };
+        if let Some((to, reply_id)) = pending.reply {
+            let msg = match result {
+                Ok(value) => json!({ "jsonrpc": "2.0", "id": reply_id, "result": value }),
+                Err(err) => {
+                    json!({ "jsonrpc": "2.0", "id": reply_id, "error": { "code": err.code, "message": err.message } })
+                }
+            };
+            if let Some(target) = self.servers.get(&to) {
+                target.conn.send(msg);
+            }
+            return;
+        }
+        if pending.kind == Kind::Internal {
+            return;
+        }
+        if pending.kind == Kind::Hover && self.hover_groups.contains_key(&pending.id) {
+            self.hover_part(pending.id, &key, result.ok(), events);
+            return;
+        }
         if pending.kind == Kind::Initialize {
             server.capabilities = result.as_ref().map(|r| r["capabilities"].clone()).unwrap_or(Value::Null);
             server.ready = true;
@@ -947,6 +1147,46 @@ impl Drop for LspManager {
     }
 }
 
+/// Ana sunucusu olmayan belgede (Spring Boot `application.properties`) ilk ek sunucu ana sunucu olur: hover, tanım,
+/// code action gibi istekler ona gider.
+fn promote(server: Option<ServerKey>, mut linters: Vec<ServerKey>) -> (Option<ServerKey>, Vec<ServerKey>) {
+    match server {
+        None if !linters.is_empty() => (Some(linters.remove(0)), linters),
+        server => (server, linters),
+    }
+}
+
+/// Spring Boot classpath dinlemesini açar / kapatır (sunucu başlatılıyorsa kuyruğa girer).
+fn enable_classpath(spring: &mut Server, on: bool) {
+    let params = json!({ "command": "sts.vscode-spring-boot.enableClasspathListening", "arguments": [on] });
+    spring.request("workspace/executeCommand", params, Kind::Internal, RequestId(0));
+}
+
+/// Spring Boot `sts/*` isteğinin jdtls karşılığı: (`workspace/executeCommand` komutu, argümanlar). Java verisi
+/// isteklerinde tek argüman isteğin kendisidir; bilinmeyen istek `None`.
+fn sts_command(method: &str, params: &Value) -> Option<(&'static str, Value)> {
+    let command = match method {
+        "sts/addClasspathListener" => {
+            return Some(("sts.java.addClasspathListener", json!([params["callbackCommandId"]])));
+        }
+        "sts/removeClasspathListener" => {
+            return Some(("sts.java.removeClasspathListener", json!([params["callbackCommandId"]])));
+        }
+        "sts/javaType" => "sts.java.type",
+        "sts/javadoc" => "sts.java.javadoc",
+        "sts/javadocHoverLink" => "sts.java.javadocHoverLink",
+        "sts/javaLocation" => "sts.java.location",
+        "sts/javaSearchTypes" => "sts.java.search.types",
+        "sts/javaSearchPackages" => "sts.java.search.packages",
+        "sts/javaSubTypes" => "sts.java.hierarchy.subtypes",
+        "sts/javaSuperTypes" => "sts.java.hierarchy.supertypes",
+        "sts/javaCodeComplete" => "sts.java.code.completions",
+        "sts/project/gav" => "sts.project.gav",
+        _ => return None,
+    };
+    Some((command, json!([params])))
+}
+
 /// `completionProvider` / `signatureHelpProvider` içindeki `triggerCharacters`.
 fn trigger_chars(provider: &Value) -> Vec<String> {
     provider["triggerCharacters"]
@@ -971,7 +1211,9 @@ fn convert(kind: Kind, value: Value) -> LspResult {
         Kind::Symbols => LspResult::Symbols(serde_json::from_value(value).ok()),
         Kind::Formatting => LspResult::Formatting(serde_json::from_value(value).unwrap_or_default()),
         Kind::SemanticTokens => LspResult::SemanticTokens(serde_json::from_value(value).ok()),
-        Kind::Raw | Kind::Initialize | Kind::Shutdown | Kind::Pull => LspResult::Raw(value),
+        Kind::Raw | Kind::Initialize | Kind::Shutdown | Kind::Pull | Kind::Relay | Kind::Internal => {
+            LspResult::Raw(value)
+        }
     }
 }
 

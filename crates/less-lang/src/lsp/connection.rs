@@ -5,14 +5,15 @@
 //! - **okuyucu**: stdout'tan çerçeve okur. Sunucunun *istekleri* (`workspace/configuration`,
 //!   `client/registerCapability`, `window/workDoneProgress/create`, jdtls `workspace/executeClientCommand`) burada
 //!   hemen yanıtlanır, çünkü sunucu (ör. jdtls) yanıtı beklerken durabilir ve UI'nin `poll()` etmesini beklemek
-//!   açılışı geciktirirdi. Diğer her şey ortak kanala gider;
+//!   açılışı geciktirirdi. Başka sunucuya aktarılması gerekenler ([`relayed`]: Spring Boot `sts/*` ↔ jdtls) yöneticiye
+//!   [`Incoming::Request`] olarak gider. Diğer her şey ortak kanala gider; her mesajda [`Waker`] UI'yi uyandırır;
 //! - **stderr**: son satırlar saklanır (sunucu kapanınca olayda gösterilir).
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use serde_json::{Value, json};
@@ -22,10 +23,15 @@ use super::jsonrpc::{Message, read_message, write_message};
 
 const STDERR_TAIL: usize = 40;
 
+/// Okuyucu iş parçacığından mesaj gelince çağrılır (UI boştayken de [`super::LspManager::poll`] çalışsın diye).
+pub type Waker = Arc<OnceLock<Box<dyn Fn() + Send + Sync>>>;
+
 /// Okuyucu iş parçacığından yöneticiye giden olaylar.
 #[derive(Debug)]
 pub(crate) enum Incoming {
     Message(ServerKey, Message),
+    /// Yanıtı başka sunucudan gelecek istek ([`relayed`]); yönetici yanıtlamak **zorunda** (jdtls süresiz bekler).
+    Request(ServerKey, Value, String, Value),
     /// Sunucu isteği okuyucuda yanıtlandı ama UI'nin de bilmesi gerekiyor (`workspace/applyEdit`, `showMessageRequest`).
     Answered(ServerKey, String, Value),
     Closed(ServerKey),
@@ -38,19 +44,20 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    /// Süreci başlatır (`cwd` = kök, `PATH` = `path`).
+    /// `launch` sürecini başlatır (`cwd` = kök, `PATH` = `path`, ek ortam değişkenleri `launch.env`).
     pub fn spawn(
-        program: &std::path::Path,
-        args: &[String],
+        launch: &super::registry::Launch,
         path: &std::ffi::OsStr,
         key: ServerKey,
-        settings: Value,
         events: Sender<Incoming>,
+        waker: Waker,
     ) -> std::io::Result<Connection> {
-        let mut child = Command::new(program)
-            .args(args)
+        let settings = launch.settings.clone();
+        let mut child = Command::new(&launch.program)
+            .args(&launch.args)
             .current_dir(&key.root)
             .env("PATH", path)
+            .envs(launch.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -58,7 +65,7 @@ impl Connection {
         let stdin = child.stdin.take().ok_or_else(|| std::io::Error::other("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout"))?;
         let stderr_pipe = child.stderr.take();
-        let mut conn = Connection::from_streams(stdout, stdin, key, settings, events);
+        let mut conn = Connection::from_streams(stdout, stdin, key, settings, events, waker);
         if let Some(pipe) = stderr_pipe {
             let tail = Arc::clone(&conn.stderr);
             thread::spawn(move || {
@@ -82,6 +89,7 @@ impl Connection {
         key: ServerKey,
         settings: Value,
         events: Sender<Incoming>,
+        waker: Waker,
     ) -> Connection {
         let (tx, rx) = channel::<Value>();
         let mut writer = writer;
@@ -94,10 +102,22 @@ impl Connection {
         });
         let reply = tx.clone();
         thread::spawn(move || {
+            let wake = || {
+                if let Some(w) = waker.get() {
+                    w()
+                }
+            };
             let mut reader = BufReader::new(reader);
             while let Ok(Some(value)) = read_message(&mut reader) {
                 let Some(msg) = Message::classify(value) else { continue };
+                wake();
                 if let Message::Request { id, method, params } = msg {
+                    if relayed(&method, &params) {
+                        if events.send(Incoming::Request(key.clone(), id, method, params)).is_err() {
+                            break;
+                        }
+                        continue;
+                    }
                     let result = answer(&method, &params, &settings);
                     let _ = reply.send(json!({ "jsonrpc": "2.0", "id": id, "result": result }));
                     if matches!(
@@ -114,6 +134,7 @@ impl Connection {
                 }
             }
             let _ = events.send(Incoming::Closed(key));
+            wake();
         });
         Connection { writer: tx, child: None, stderr: Arc::default() }
     }
@@ -158,6 +179,15 @@ impl Drop for Connection {
     }
 }
 
+/// Okuyucuda yanıtlanmayıp yöneticiye aktarılan sunucu istekleri: Spring Boot'un Java verisi istekleri (`sts/*`, jdtls'e
+/// gider) ve jdtls'in Spring Boot'a yönelik istemci komutları (classpath geri çağrısı, `ls.start` / `ls.stop`).
+fn relayed(method: &str, params: &Value) -> bool {
+    let command = params["command"].as_str().unwrap_or_default();
+    method.starts_with("sts/")
+        || (method == "workspace/executeClientCommand"
+            && (command.starts_with("sts4.classpath.") || command.starts_with("vscode-spring-boot.ls.")))
+}
+
 /// Sunucu isteklerine otomatik yanıt.
 fn answer(method: &str, params: &Value, settings: &Value) -> Value {
     match method {
@@ -185,7 +215,7 @@ fn answer(method: &str, params: &Value, settings: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::answer;
+    use super::{answer, relayed};
     use serde_json::json;
 
     #[test]
@@ -197,5 +227,10 @@ mod tests {
         let all = json!([{ "runtimes": [1] }, null, settings, settings]);
         assert_eq!(answer("workspace/configuration", &params, &settings), all, "empty section = everything (eslint)");
         assert_eq!(answer("workspace/executeClientCommand", &json!({}), &settings), json!([]));
+        assert!(relayed("sts/javaType", &json!({})));
+        assert!(relayed("workspace/executeClientCommand", &json!({ "command": "sts4.classpath.abcdefgh" })));
+        assert!(relayed("workspace/executeClientCommand", &json!({ "command": "vscode-spring-boot.ls.start" })));
+        assert!(!relayed("workspace/executeClientCommand", &json!({ "command": "java.action.other" })));
+        assert!(!relayed("workspace/configuration", &json!({})));
     }
 }

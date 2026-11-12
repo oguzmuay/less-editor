@@ -101,6 +101,13 @@ pub fn find_root_with(path: &Path, names: &[&str]) -> Option<PathBuf> {
     start.ancestors().find(|dir| names.iter().any(|n| dir.join(n).exists())).map(Path::to_path_buf)
 }
 
+/// Dosya bir Spring Boot projesinde mi: yukarı doğru herhangi bir derleme dosyası `spring-boot` içeriyor mu.
+pub fn is_spring_boot(path: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .any(|dir| BUILD_FILES.iter().any(|f| fs::read_to_string(dir.join(f)).is_ok_and(|s| s.contains("spring-boot"))))
+}
+
 /// Monorepo'da Java dosyasının proje kökü: Gradle settings → iç içe pom/build.gradle zincirinin en üstü → mvnw/gradlew/.git.
 pub fn java_root(path: &Path) -> Option<PathBuf> {
     if let Some(root) = find_root_with(path, &["settings.gradle", "settings.gradle.kts"]) {
@@ -157,14 +164,18 @@ pub struct JdtlsLaunch {
     pub missing_java: bool,
 }
 
-/// jdtls argümanları ve ayarları. `mason_share` verilirse lombok ajanı ve bundle'lar eklenir.
+/// jdtls argümanları ve ayarları. `mason_share` verilirse lombok ajanı ve bundle'lar eklenir. `on_demand`: yalnız açılan
+/// dosyanın modülü içe aktarılır, diğer modüller `~/.m2` jar'larından okunur (jdtls 1.64+; eskisi ayarı yok sayar).
+/// Full modun çalışma alanı tüm modülleri içerdiği için iki mod ayrı önbellek klasörü kullanır.
 pub fn jdtls_launch(
     root: &Path,
     cache_base: &Path,
     jdks: &BTreeMap<u32, PathBuf>,
     mason_share: Option<&Path>,
+    on_demand: bool,
 ) -> JdtlsLaunch {
-    let cache_dir = cache_base.join("jdtls").join(project_name(root));
+    let name = project_name(root);
+    let cache_dir = cache_base.join("jdtls").join(if on_demand { format!("{name}-ondemand") } else { name });
     let mut args = Vec::new();
     let java = jdtls_java(jdks);
     if let Some(java) = &java {
@@ -182,11 +193,19 @@ pub fn jdtls_launch(
     ]);
     let bundles: Vec<String> =
         mason_share.map(jdtls_bundles).unwrap_or_default().iter().map(|p| p.display().to_string()).collect();
+    let settings = json!({ "java": {
+        "configuration": { "runtimes": java_runtimes(jdks) },
+        "import": { "mode": if on_demand { "ondemand" } else { "full" } },
+    } });
     JdtlsLaunch {
         args,
         cache_dir,
-        settings: json!({ "java": { "configuration": { "runtimes": java_runtimes(jdks) } } }),
-        init_options: json!({ "bundles": bundles, "extendedClientCapabilities": { "classFileContentsSupport": true } }),
+        init_options: json!({
+            "bundles": bundles,
+            "settings": settings,
+            "extendedClientCapabilities": { "classFileContentsSupport": true },
+        }),
+        settings,
         missing_java: java.is_none(),
     }
 }
@@ -269,11 +288,14 @@ mod tests {
         assert_eq!(names, ["com.microsoft.java.debug.plugin-0.53.jar", "com.microsoft.java.test.plugin-0.43.jar"]);
 
         let jdks: BTreeMap<u32, PathBuf> = [(26, PathBuf::from("/jdk26"))].into();
-        let launch = jdtls_launch(root, Path::new("/cache/less-rs"), &jdks, Some(&share));
+        let launch = jdtls_launch(root, Path::new("/cache/less-rs"), &jdks, Some(&share), false);
         assert_eq!(launch.args[0], "--java-executable=/jdk26/bin/java");
         assert!(launch.args.contains(&"--jvm-arg=-Djava.import.generatesMetadataFilesAtProjectRoot=false".into()));
         assert_eq!(launch.cache_dir, PathBuf::from(format!("/cache/less-rs/jdtls/{name}")));
         assert!(!launch.missing_java);
         assert_eq!(launch.init_options["bundles"].as_array().unwrap().len(), 2);
+        let od = jdtls_launch(root, Path::new("/cache/less-rs"), &jdks, Some(&share), true);
+        assert_eq!(od.cache_dir, PathBuf::from(format!("/cache/less-rs/jdtls/{name}-ondemand")));
+        assert_eq!(od.init_options["settings"]["java"]["import"]["mode"], "ondemand");
     }
 }

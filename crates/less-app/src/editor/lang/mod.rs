@@ -232,11 +232,19 @@ pub struct Lang {
     blame: HashMap<PathBuf, Vec<Option<BlameLine>>>,
     blame_tx: mpsc::Sender<(PathBuf, Vec<Option<BlameLine>>)>,
     blame_rx: mpsc::Receiver<(PathBuf, Vec<Option<BlameLine>>)>,
+    /// LSP mesajı gelince UI uyandırılıyor mu (ilk `tick`'te kurulur).
+    waker_set: bool,
 }
 
 impl Lang {
     pub fn new(roots: &[PathBuf]) -> Self {
-        Self::with_lsp(roots, LspManager::new(LspConfig::default()))
+        let settings = crate::settings::Settings::load();
+        let config = LspConfig {
+            spring_boot: settings.spring_boot,
+            java_on_demand: settings.java_on_demand,
+            ..LspConfig::default()
+        };
+        Self::with_lsp(roots, LspManager::new(config))
     }
 
     fn with_lsp(roots: &[PathBuf], lsp: LspManager) -> Self {
@@ -265,6 +273,7 @@ impl Lang {
             blame: HashMap::new(),
             blame_tx,
             blame_rx,
+            waker_set: false,
         }
     }
 
@@ -354,6 +363,11 @@ impl Lang {
 
     /// Her karede: LSP olaylarını toplar, yanıtları işler.
     pub fn tick(&mut self, cx: &mut Cx) {
+        if !self.waker_set {
+            let ctx = cx.ctx.clone();
+            self.lsp.set_waker(move || ctx.request_repaint());
+            self.waker_set = true;
+        }
         for (path, lines) in self.blame_rx.try_iter() {
             if self.docs.contains_key(&path) {
                 self.blame.insert(path, lines);
@@ -397,6 +411,14 @@ impl Lang {
             }
             Event::Message { topic, .. } if topic == crate::panels::options::TOPIC_SERVERS_CHANGED => {
                 self.lsp.retry_missing(&self.docs);
+                false
+            }
+            Event::Message { topic, data } if topic == crate::panels::options::TOPIC_SPRING_BOOT => {
+                self.lsp.set_spring_boot(data == "on", &self.docs);
+                false
+            }
+            Event::Message { topic, data } if topic == crate::panels::options::TOPIC_JAVA_ON_DEMAND => {
+                self.lsp.set_java_on_demand(data == "on", &self.docs);
                 false
             }
             Event::Message { topic, data } if topic == TOPIC_BREAKPOINTS => {

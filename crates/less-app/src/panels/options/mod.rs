@@ -18,10 +18,17 @@ use less_lang::lsp::registry;
 use less_lang::servers::{self, CatalogEntry, InstallEvent, InstallStatus, Installer, Job};
 
 use super::{Cx, Event, Panel, Region};
+use crate::settings::Settings;
 use crate::widgets::color;
 
 /// Sunucu kurulumu / kaldırılması bitti (veri: katalog kimliği); `editor::lang` dinler.
 pub const TOPIC_SERVERS_CHANGED: &str = "lang.servers_changed";
+
+/// Spring Boot Language Server açıldı / kapandı (veri: `on` / `off`); `editor::lang` dinler.
+pub const TOPIC_SPRING_BOOT: &str = "lang.spring_boot";
+
+/// jdtls on-demand içe aktarma açıldı / kapandı (veri: `on` / `off`); `editor::lang` dinler.
+pub const TOPIC_JAVA_ON_DEMAND: &str = "lang.java_on_demand";
 
 const TAB_KEY: &str = "options";
 
@@ -47,11 +54,26 @@ pub struct OptionsPanel {
     /// Projede bulunan diller (arka planda taranır) ve Tailwind kullanımı.
     project: Option<(BTreeSet<Language>, bool)>,
     scan: Option<Receiver<(BTreeSet<Language>, bool)>>,
+    /// Spring Boot Language Server ayarı (`config.toml` → `spring_boot`).
+    spring_boot: bool,
+    /// jdtls on-demand içe aktarma ayarı (`config.toml` → `java_on_demand`).
+    java_on_demand: bool,
 }
 
 impl OptionsPanel {
     fn new(installer: Option<Installer>) -> Self {
-        Self { installer, rows: HashMap::new(), project: None, scan: None }
+        let Settings { spring_boot, java_on_demand, .. } = Settings::load();
+        Self { installer, rows: HashMap::new(), project: None, scan: None, spring_boot, java_on_demand }
+    }
+
+    /// Ayarı `apply` ile diske yazar ve `topic` ile dil sunucularına bildirir (Java sunucuları yeniden başlar).
+    fn save_toggle(on: bool, topic: &str, apply: fn(&mut Settings, bool), cx: &mut Cx) {
+        let mut settings = Settings::load();
+        apply(&mut settings, on);
+        if let Err(e) = settings.save() {
+            cx.error(format!("Could not save settings: {e}"));
+        }
+        cx.send(topic, if on { "on" } else { "off" });
     }
 
     /// Bölümler (başlık, çizim). Editor yalnız yer tutucu.
@@ -164,6 +186,26 @@ impl OptionsPanel {
         if ui.button("Refresh").clicked() {
             self.refresh(cx);
         }
+        let spring = toggle(
+            ui,
+            p,
+            &mut self.spring_boot,
+            "Spring Boot Language Server",
+            "Bean, @Value, application.properties and application.yml support in Spring Boot projects. Java servers restart on change.",
+        );
+        if spring {
+            Self::save_toggle(self.spring_boot, TOPIC_SPRING_BOOT, |s, on| s.spring_boot = on, cx);
+        }
+        let on_demand = toggle(
+            ui,
+            p,
+            &mut self.java_on_demand,
+            "Java: load modules on demand",
+            "jdtls loads only the modules of opened files and reads the others from ~/.m2 jars (run mvn install after changing them). Faster, and fixes Kotlin modules shown as unresolved; references and rename cover loaded modules only. Needs jdtls 1.64+. Java servers restart on change.",
+        );
+        if on_demand {
+            Self::save_toggle(self.java_on_demand, TOPIC_JAVA_ON_DEMAND, |s, on| s.java_on_demand = on, cx);
+        }
     }
 
     fn editor_ui(&mut self, ui: &mut egui::Ui, cx: &mut Cx) {
@@ -178,6 +220,14 @@ impl OptionsPanel {
             None => dir.display().to_string(),
         }
     }
+}
+
+/// Başlıklı onay kutusu ve altında açıklama; değer değiştiyse `true`.
+fn toggle(ui: &mut egui::Ui, p: less_theme::Palette, value: &mut bool, title: &str, description: &str) -> bool {
+    ui.add_space(12.0);
+    let changed = ui.checkbox(value, RichText::new(title).color(color(p.fg))).changed();
+    ui.label(RichText::new(description).color(color(p.fg_dim)).size(12.0));
+    changed
 }
 
 fn status_text(row: &Row, p: &less_theme::Palette) -> (String, Color32) {

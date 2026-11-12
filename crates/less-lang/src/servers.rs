@@ -46,6 +46,9 @@ pub enum Method {
     GoInstall { module: &'static str },
     /// `rustup component add <bileşen>`; ikili `rustup which` ile bulunup bağlanır.
     Rustup { component: &'static str },
+    /// Open VSX'teki VS Code eklentisinin son sürümü (VSIX = zip, SHA-256 doğrulanır); içindeki jar'ı çalıştıran
+    /// başlatıcı betik kurulum klasörünün köküne `bins[0]` adıyla yazılır (Spring Boot Language Server).
+    OpenVsx { namespace: &'static str, name: &'static str },
 }
 
 /// Kurulumun ön koşulu (yoksa açık bir hata verilir).
@@ -100,6 +103,20 @@ use Language as L;
 
 const WEB: &[Language] = &[L::TypeScript, L::Tsx, L::JavaScript, L::Jsx];
 
+/// JetBrains kotlin-lsp bağımsız arşivi (`.sit` adlı zip) ve SHA-256'sı; "son sürüm" adresi yayınlanmıyor.
+/// shortcut: sürüm sabit, yeni sürüm için adres + SHA + `bins` yolu birlikte güncellenir.
+const KOTLIN_LSP: (&str, &str) = if cfg!(target_arch = "aarch64") {
+    (
+        "https://download.jetbrains.com/language-server/kotlin-server/263.7084.0/kotlin-server-263.7084.0-aarch64.sit",
+        "b403bf8a54bd458e3ba6731cf8abb3340be08b439c03576dfc02b13faf3694b8",
+    )
+} else {
+    (
+        "https://download.jetbrains.com/language-server/kotlin-server/263.7084.0/kotlin-server-263.7084.0.sit",
+        "b29c393a5e541153d03d626e7946268437e358a667a5f914a126dbb4007664b1",
+    )
+};
+
 static CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         id: "vtsls",
@@ -147,16 +164,21 @@ static CATALOG: &[CatalogEntry] = &[
         requires: &[Prereq::Java, Prereq::Python],
     },
     CatalogEntry {
-        id: "kotlin-language-server",
-        name: "Kotlin (kotlin-language-server)",
+        id: "kotlin-lsp",
+        name: "Kotlin (JetBrains kotlin-lsp)",
         servers: &["kotlin_ls"],
         languages: &[L::Kotlin],
-        method: Method::GithubRelease {
-            repo: "fwcd/kotlin-language-server",
-            asset: "server.zip",
-            kind: ArchiveKind::Zip,
-        },
-        bins: &[("kotlin-language-server", "server/bin/kotlin-language-server")],
+        method: Method::Archive { url: KOTLIN_LSP.0, sha256: Some(KOTLIN_LSP.1), kind: ArchiveKind::Zip },
+        bins: &[("kotlin-lsp", "kotlin-server-263.7084.0/kotlin-lsp.sh")],
+        requires: &[Prereq::Java],
+    },
+    CatalogEntry {
+        id: "spring-boot-ls",
+        name: "Spring Boot (Spring Tools)",
+        servers: &["spring_boot"],
+        languages: &[L::Java, L::Yaml],
+        method: Method::OpenVsx { namespace: "vmware", name: "vscode-spring-boot" },
+        bins: &[("spring-boot-language-server", "spring-boot-language-server")],
         requires: &[Prereq::Java],
     },
     CatalogEntry {
@@ -408,6 +430,18 @@ impl Work<'_> {
                 self.archive(&url, sha.as_deref(), *kind, &home)?;
             }
             Method::Archive { url, sha256, kind } => self.archive(url, *sha256, *kind, &home)?,
+            Method::OpenVsx { namespace, name } => {
+                self.progress(Some(0), "Looking up the latest version…");
+                let curl = self.tool("curl")?;
+                let api = format!("https://open-vsx.org/api/{namespace}/{name}/latest");
+                let json = capture(Command::new(&curl).args(["-fsSL", &api]), self.path_dirs)?;
+                let (url, sha_url) = open_vsx_files(&json).ok_or_else(|| format!("No download for {name}"))?;
+                let sha = capture(Command::new(&curl).args(["-fsSL", &sha_url]), self.path_dirs)?;
+                let sha = sha.split_whitespace().next().ok_or("Empty checksum")?.to_string();
+                self.archive(&url, Some(&sha), ArchiveKind::Zip, &home)?;
+                let script = spring_launcher(&home).ok_or("No language server jar in the extension")?;
+                std::fs::write(home.join(self.entry.bins[0].1), script).map_err(|e| e.to_string())?;
+            }
         }
         for (name, rel) in self.entry.bins {
             let target = home.join(rel);
@@ -502,6 +536,30 @@ impl Work<'_> {
         }
         Ok(())
     }
+}
+
+/// Open VSX `…/latest` yanıtından VSIX adresi ve SHA-256 dosyasının adresi.
+pub fn open_vsx_files(json: &str) -> Option<(String, String)> {
+    let v: Value = serde_json::from_str(json).ok()?;
+    Some((v["files"]["download"].as_str()?.to_string(), v["files"]["sha256"].as_str()?.to_string()))
+}
+
+/// Açılmış Spring Boot eklentisindeki ince (`lib/` yanında olmalı) `*-exec.jar`'ı çalıştıran betik. Java
+/// `JAVA_HOME`'dan (yoksa PATH'ten) alınır; argümanlar VS Code eklentisinin başlatmasıyla aynı.
+pub fn spring_launcher(home: &Path) -> Option<String> {
+    let dir = home.join("extension/language-server");
+    let jar = std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().ends_with("-exec.jar")))?;
+    Some(format!(
+        "#!/bin/sh\nJAVA=\"${{JAVA_HOME:+$JAVA_HOME/bin/}}java\"\nexec \"$JAVA\" -Xmx1024m -XX:TieredStopAtLevel=1 \\\n  \
+         -Dsts.lsp.client=vscode -Dspring.config.location=classpath:/application.properties \\\n  \
+         -Djdk.util.zip.disableZip64ExtraFieldValidation=true -Dspring.main.web-application-type=NONE \\\n  \
+         -Xlog:jni+resolve=off -jar '{}' \"$@\"\n",
+        jar.display()
+    ))
 }
 
 /// GitHub `releases/latest` yanıtından varlığın adresi ve (API verdiyse) SHA-256'sı.

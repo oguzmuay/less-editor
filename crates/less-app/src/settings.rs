@@ -30,6 +30,10 @@ pub struct Settings {
     pub theme: String,
     /// LESS-rs'in kendi egui arayüzünde ve kod alanında kullandığı yazı tipi (#36).
     pub font: String,
+    /// Spring Boot projelerinde Spring Boot Language Server'ı jdtls'in yanında çalıştır (`:options`).
+    pub spring_boot: bool,
+    /// jdtls yalnız açılan dosyaların modüllerini yükler, diğerlerini `~/.m2` jar'larından okur (`:options`).
+    pub java_on_demand: bool,
 }
 
 impl Default for Settings {
@@ -38,6 +42,8 @@ impl Default for Settings {
             keymap: Keymap::Vim,
             theme: less_theme::TOKYONIGHT_NIGHT.id.to_owned(),
             font: less_theme::fonts::DEFAULT.to_owned(),
+            spring_boot: true,
+            java_on_demand: true,
         }
     }
 }
@@ -70,5 +76,7 @@ mod tests {
         assert_eq!(back, settings);
         let defaults: Settings = toml::from_str("keymap = \"vim\"").unwrap();
         assert_eq!(defaults.font, less_theme::fonts::DEFAULT);
+        assert!(defaults.spring_boot, "Spring Boot LS is on unless turned off");
+        assert!(defaults.java_on_demand, "jdtls on-demand import is on unless turned off");
     }
 }

@@ -197,6 +197,8 @@ fn empty_config(dir: &Path) -> LspConfig {
         extra_bin_dirs: vec![],
         cache_dir: dir.join("cache"),
         jdk_search: crate::java::JdkSearch { homebrew_opt: vec![], jvm_dirs: vec![] },
+        spring_boot: false,
+        java_on_demand: false,
     }
 }
 
@@ -494,6 +496,123 @@ fn real_eslint_reports_warning() {
     real_server_reports(&file, "\nexport const lessProbe: any = 1;\n", "Unexpected any", Duration::from_secs(90));
 }
 
+/// Teşhis: `LESS_REAL_JAVA_FILE` gerçek jdtls (+ kuruluysa Spring Boot) ile açılır, ilk import bitip diagnostikler 20 sn
+/// değişmeyene kadar beklenir ve yazdırılır. jdtls çalışma klasörü `LESS_REAL_CACHE` (açık LESS'in kilidine dokunmaz).
+#[test]
+#[ignore]
+fn real_jdtls_dump_diagnostics() {
+    let file = PathBuf::from(std::env::var_os("LESS_REAL_JAVA_FILE").expect("set LESS_REAL_JAVA_FILE"));
+    let mut config = LspConfig::default();
+    if let Some(cache) = std::env::var_os("LESS_REAL_CACHE") {
+        config.cache_dir = PathBuf::from(cache);
+    }
+    let lang = Language::from_path(&file).unwrap();
+    let mut mgr = LspManager::new(config);
+    let extra = std::env::var("LESS_REAL_APPEND").unwrap_or_default();
+    mgr.open(&file, lang, &(std::fs::read_to_string(&file).unwrap() + &extra));
+    let (deadline, mut last_change, mut last) = (Instant::now() + Duration::from_secs(600), Instant::now(), 0);
+    while Instant::now() < deadline {
+        for e in mgr.poll_timeout(Duration::from_millis(500)) {
+            match e {
+                LspEvent::Progress { key, message: Some(m), .. } => eprintln!("[{}] {m}", key.server),
+                LspEvent::ServerExited { key, stderr, .. } => eprintln!("[{}] exited {stderr:?}", key.server),
+                LspEvent::ServerStarted { key } => eprintln!("[{}] started", key.server),
+                _ => {}
+            }
+        }
+        let n = mgr.diagnostics().get(&file).len();
+        if n != last {
+            (last, last_change) = (n, Instant::now());
+        }
+        // Ready'den sonra derleme ve bağımlılık güncellemesi sürer; diagnostikler 90 sn değişmeyince dur.
+        if last > 0 && last_change.elapsed() > Duration::from_secs(90) {
+            break;
+        }
+    }
+    for d in mgr.diagnostics().get(&file) {
+        eprintln!("DIAG {:?} {}:{} {:?} {}", d.severity, d.start.line + 1, d.start.character, d.source, d.message);
+    }
+    if let Some((line, col)) = std::env::var("LESS_REAL_GD")
+        .ok()
+        .and_then(|v| v.split_once(':').map(|(l, c)| (l.parse::<u32>().unwrap() - 1, c.parse().unwrap())))
+    {
+        let id = mgr.definition(&file, Position { line, character: col }).unwrap();
+        let events =
+            collect(&mut mgr, |e| e.iter().any(|ev| matches!(ev, LspEvent::Response { id: a, .. } if *a == id)));
+        eprintln!("GD {:?}", response(&events, id));
+    }
+    let args = json!([uri::path_to_uri(&file), "{\"scope\":\"test\"}"]);
+    if let Some(id) = mgr.execute_command(&file, "java.project.getClasspaths", args) {
+        let events =
+            collect(&mut mgr, |e| e.iter().any(|ev| matches!(ev, LspEvent::Response { id: a, .. } if *a == id)));
+        match response(&events, id) {
+            LspResult::Raw(v) => v["classpaths"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .for_each(|c| eprintln!("CP {c}")),
+            other => eprintln!("CP error {other:?}"),
+        }
+    }
+    mgr.shutdown_all(Duration::from_secs(2));
+}
+
+/// Gerçek Spring Boot uçtan uca: `LESS_REAL_JAVA_FILE` (jdtls'i başlatır) ve `LESS_REAL_CONFIG_FILE`
+/// (`application.properties` / `.yml`, sonuna `LESS_REAL_PROBE` eklenir, ör. `server.po`) açılır. Spring classpath'i
+/// jdtls'ten (aktarma) alıp `LESS_REAL_WANT` (ör. `server.port`) önerene kadar tamamlama istenir; ilk satırda hover.
+#[test]
+#[ignore]
+fn real_spring_boot_config_completion_and_hover() {
+    let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+    let (java, config) = (PathBuf::from(var("LESS_REAL_JAVA_FILE")), PathBuf::from(var("LESS_REAL_CONFIG_FILE")));
+    let (probe, want) = (var("LESS_REAL_PROBE"), var("LESS_REAL_WANT"));
+    let mut lsp_config = LspConfig::default();
+    if let Some(cache) = std::env::var_os("LESS_REAL_CACHE") {
+        lsp_config.cache_dir = PathBuf::from(cache);
+    }
+    let mut mgr = LspManager::new(lsp_config);
+    mgr.open(&java, Language::Java, &std::fs::read_to_string(&java).unwrap());
+    let text = std::fs::read_to_string(&config).unwrap().trim_end().to_string() + "\n" + &probe;
+    let lang = Language::from_path(&config).unwrap();
+    mgr.open(&config, lang, &text);
+    eprintln!("config server: {:?}", mgr.server_of(&config));
+    let end = Position { line: text.lines().count() as u32 - 1, character: probe.len() as u32 };
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let (mut pending, mut found, mut next) = (None, false, Instant::now());
+    while !found && Instant::now() < deadline {
+        if pending.is_none() && Instant::now() >= next {
+            pending = mgr.complete(&config, end, None).first().copied();
+            next = Instant::now() + Duration::from_secs(10);
+        }
+        for e in mgr.poll_timeout(Duration::from_millis(300)) {
+            match e {
+                LspEvent::Response { id, result: LspResult::Completion { items, .. }, .. } if Some(id) == pending => {
+                    pending = None;
+                    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).take(8).collect();
+                    eprintln!("completion ({} items): {labels:?}", items.len());
+                    found = items.iter().any(|i| i.label == want);
+                }
+                LspEvent::Response { id, .. } if Some(id) == pending => pending = None,
+                LspEvent::ServerExited { key, stderr, .. } => eprintln!("[{}] exited {stderr:?}", key.server),
+                LspEvent::ShowMessage { key, message, .. } => eprintln!("[{}] {message}", key.server),
+                _ => {}
+            }
+        }
+    }
+    let hover = mgr.hover(&config, Position { line: 0, character: 3 });
+    let events =
+        collect(&mut mgr, |e| e.iter().any(|ev| matches!(ev, LspEvent::Response { id, .. } if Some(*id) == hover)));
+    if let Some(LspResult::Hover { raw, .. }) = hover.map(|h| response(&events, h)) {
+        eprintln!("HOVER {:?}", crate::tooltip::assemble(&[], std::slice::from_ref(raw)).doc);
+    }
+    for d in mgr.diagnostics().get(&config) {
+        eprintln!("DIAG {}:{} {:?} {}", d.start.line + 1, d.start.character, d.source, d.message);
+    }
+    mgr.shutdown_all(Duration::from_secs(2));
+    assert!(found, "{want} never offered");
+}
+
 /// `file`'ı `probe` eklenmiş metinle açar, `error` içeren bir diagnostik gelene kadar bekler.
 fn real_server_reports(file: &Path, probe: &str, error: &str, timeout: Duration) {
     let file = file.to_path_buf();
@@ -763,4 +882,135 @@ fn real_completion_vtsls_and_python() {
         "path",
         Some(Position { line: 2, character: 6 }),
     );
+}
+
+/// [`scripted_server`] gibi; ayrıca `initialized` gelince `after_init` mesajlarını (sunucu istekleri) yollar.
+fn chatty_server(
+    reader: std::io::PipeReader,
+    mut writer: std::io::PipeWriter,
+    capabilities: Value,
+    replies: Vec<(&'static str, Value)>,
+    after_init: Vec<Value>,
+    seen: mpsc::Sender<Value>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut reader = BufReader::new(reader);
+        while let Ok(Some(msg)) = read_message(&mut reader) {
+            let method = msg["method"].as_str().unwrap_or("").to_string();
+            let _ = seen.send(msg.clone());
+            let result = match method.as_str() {
+                "initialize" => Some(json!({ "capabilities": capabilities })),
+                "initialized" => {
+                    after_init.iter().for_each(|m| write_message(&mut writer, m).unwrap());
+                    None
+                }
+                "exit" => break,
+                m => replies.iter().find(|(k, _)| *k == m).map(|(_, v)| v.clone()),
+            };
+            if let (Some(result), Some(id)) = (result, msg.get("id").filter(|_| !method.is_empty())) {
+                write_message(&mut writer, &json!({ "jsonrpc": "2.0", "id": id, "result": result })).unwrap();
+            }
+        }
+    })
+}
+
+#[test]
+fn spring_boot_relays_java_data_and_classpath_and_merges_hover() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    std::fs::write(root.join("pom.xml"), "<artifactId>spring-boot-starter-parent</artifactId>").unwrap();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let mut mgr = LspManager::new(LspConfig { spring_boot: true, ..empty_config(&root) });
+    let caps = json!({ "textDocumentSync": 1, "hoverProvider": true });
+    let request = |id: &str, method: &str, params: Value| json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+
+    let (jdt_tx, jdt_seen) = mpsc::channel();
+    let (c1r, s1w) = std::io::pipe().unwrap();
+    let (s1r, c1w) = std::io::pipe().unwrap();
+    let h1 = chatty_server(
+        s1r,
+        s1w,
+        caps.clone(),
+        vec![
+            ("textDocument/hover", json!({ "contents": { "kind": "markdown", "value": "jdt" } })),
+            ("workspace/executeCommand", json!({ "name": "Foo" })),
+        ],
+        vec![
+            request(
+                "ls",
+                "workspace/executeClientCommand",
+                json!({ "command": "vscode-spring-boot.ls.start", "arguments": [] }),
+            ),
+            request(
+                "cp",
+                "workspace/executeClientCommand",
+                json!({ "command": "sts4.classpath.abcdefgh", "arguments": ["file:///p", "p", false] }),
+            ),
+        ],
+        jdt_tx,
+    );
+    mgr.connect_streams("jdtls", &root, c1r, c1w, json!({}));
+
+    let (spring_tx, spring_seen) = mpsc::channel();
+    let (c2r, s2w) = std::io::pipe().unwrap();
+    let (s2r, c2w) = std::io::pipe().unwrap();
+    let h2 = chatty_server(
+        s2r,
+        s2w,
+        caps,
+        vec![
+            ("textDocument/hover", json!({ "contents": { "kind": "markdown", "value": "bean" } })),
+            ("workspace/executeCommand", json!("done")),
+        ],
+        vec![request("j1", "sts/javaType", json!({ "bindingKey": "LFoo;" }))],
+        spring_tx,
+    );
+    mgr.connect_streams("spring_boot", &root, c2r, c2w, json!({}));
+
+    let file = root.join("src/A.java");
+    mgr.open(&file, Language::Java, "class A {}\n");
+    collect(&mut mgr, |e| e.iter().filter(|e| matches!(e, LspEvent::ServerStarted { .. })).count() == 2);
+
+    let (mut to_jdt, mut to_spring) = (Vec::new(), Vec::new());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let done = |jdt: &[Value], spring: &[Value]| {
+        jdt.iter().any(|m| m["id"] == "cp" && m.get("result").is_some())
+            && spring.iter().any(|m| m["id"] == "j1" && m.get("result").is_some())
+    };
+    while !done(&to_jdt, &to_spring) && Instant::now() < deadline {
+        mgr.poll_timeout(Duration::from_millis(20));
+        to_jdt.extend(jdt_seen.try_iter());
+        to_spring.extend(spring_seen.try_iter());
+    }
+    let java_type = to_jdt.iter().find(|m| m["params"]["command"] == "sts.java.type").expect("sts/javaType → jdtls");
+    assert_eq!(java_type["params"]["arguments"], json!([{ "bindingKey": "LFoo;" }]));
+    assert_eq!(to_jdt.iter().find(|m| m["id"] == "ls").unwrap()["result"], Value::Null, "ls.start answered");
+    assert_eq!(
+        to_jdt.iter().find(|m| m["id"] == "cp").unwrap()["result"],
+        "done",
+        "classpath callback answered by Spring"
+    );
+    let all = to_spring;
+    assert_eq!(all.iter().find(|m| m["id"] == "j1").unwrap()["result"], json!({ "name": "Foo" }));
+    let commands: Vec<&Value> =
+        all.iter().filter(|m| m["method"] == "workspace/executeCommand").map(|m| &m["params"]).collect();
+    assert!(
+        commands
+            .iter()
+            .any(|p| p["command"] == "sts.vscode-spring-boot.enableClasspathListening"
+                && p["arguments"] == json!([true]))
+    );
+    assert!(commands.iter().any(|p| p["command"] == "sts4.classpath.abcdefgh" && p["arguments"][1] == "p"));
+    assert!(all.iter().any(|m| m["method"] == "textDocument/didOpen"), "Spring gets Java documents");
+
+    let hover = mgr.hover(&file, Position { line: 0, character: 6 }).unwrap();
+    let events = collect(&mut mgr, |e| e.iter().any(|ev| matches!(ev, LspEvent::Response { id, .. } if *id == hover)));
+    let LspResult::Hover { raw, .. } = response(&events, hover) else { panic!() };
+    let tip = crate::tooltip::assemble(&[], std::slice::from_ref(raw));
+    assert_eq!(tip.doc.as_deref(), Some("jdt\n\nbean"), "one merged hover from both servers");
+    assert_eq!(events.iter().filter(|e| matches!(e, LspEvent::Response { id, .. } if *id == hover)).count(), 1);
+
+    mgr.shutdown_all(Duration::from_millis(300));
+    h1.join().unwrap();
+    h2.join().unwrap();
 }

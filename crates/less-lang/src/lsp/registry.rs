@@ -18,6 +18,10 @@ pub struct LspConfig {
     /// `~/.cache/less-rs` (jdtls çalışma klasörleri burada).
     pub cache_dir: PathBuf,
     pub jdk_search: java::JdkSearch,
+    /// Spring Boot projelerinde Java / YAML belgelerine Spring Boot Language Server da bağlanır.
+    pub spring_boot: bool,
+    /// jdtls yalnız açılan dosyaların modüllerini içe aktarır ([`java::jdtls_launch`]).
+    pub java_on_demand: bool,
 }
 
 impl Default for LspConfig {
@@ -42,6 +46,8 @@ impl Default for LspConfig {
             ],
             cache_dir: home.join(".cache/less-rs"),
             jdk_search: java::JdkSearch::default(),
+            spring_boot: true,
+            java_on_demand: true,
         }
     }
 }
@@ -156,9 +162,9 @@ pub fn server_for(lang: Language) -> Option<ServerSpec> {
         },
         L::Kotlin => ServerSpec {
             id: "kotlin_ls",
-            candidates: &[("kotlin-language-server", &[]), ("kotlin-lsp", &["--stdio"])],
+            candidates: &[("kotlin-lsp", &["--stdio"])],
             root_markers: &["settings.gradle.kts", "settings.gradle", "pom.xml", "build.gradle.kts", "build.gradle"],
-            install_hint: "Install it from :options (Language Servers → Kotlin)",
+            install_hint: "Install it from :options (Language Servers → Kotlin) and Java 25+ (brew install openjdk)",
         },
         L::Go => ServerSpec {
             id: "gopls",
@@ -179,7 +185,7 @@ pub fn server_for(lang: Language) -> Option<ServerSpec> {
             ],
             install_hint: "Install it from :options (Language Servers → basedpyright)",
         },
-        L::Sql => return None,
+        L::Sql | L::Properties => return None,
     })
 }
 
@@ -225,7 +231,41 @@ fn tailwind() -> ServerSpec {
     }
 }
 
-/// Ana sunucuya ek sunucular (ESLint diagnostik, Tailwind tamamlama + diagnostik). Kökleri **yalnız** işaretten
+fn spring_boot() -> ServerSpec {
+    ServerSpec {
+        id: "spring_boot",
+        candidates: &[("spring-boot-language-server", &[])],
+        root_markers: &[],
+        install_hint: "Install it from :options (Language Servers → Spring Boot)",
+    }
+}
+
+/// Spring Boot eklentisinin jdtls'e eklenecek bundle'ları (VSIX `package.json` → `contributes.javaExtensions`).
+const SPRING_JDTLS_BUNDLES: &[&str] = &[
+    "io.projectreactor.reactor-core.jar",
+    "org.reactivestreams.reactive-streams.jar",
+    "jdt-ls-commons.jar",
+    "jdt-ls-extension.jar",
+    "sts-gradle-tooling.jar",
+];
+
+/// Kurulu Spring Boot eklentisinin jdtls bundle'ları; kurulu değilse boş.
+pub fn spring_jdtls_bundles() -> Vec<PathBuf> {
+    let jars = crate::servers::servers_dir().join("spring-boot-ls/extension/jars");
+    SPRING_JDTLS_BUNDLES.iter().map(|j| jars.join(j)).filter(|p| p.exists()).collect()
+}
+
+/// Spring Boot sunucusunun belge dili kimliği: YAML / properties (yalnız `application*` / `bootstrap*`, bkz.
+/// [`extra_root`]) Boot yapılandırması olarak açılır.
+pub fn spring_language_id(lang: Language) -> &'static str {
+    match lang {
+        Language::Yaml => "spring-boot-properties-yaml",
+        Language::Properties => "spring-boot-properties",
+        _ => lang.lsp_id(),
+    }
+}
+
+/// Ana sunucuya ek sunucular (ESLint diagnostik, Tailwind tamamlama + diagnostik, Spring Boot). Kökleri **yalnız** işaretten
 /// bulunur ([`extra_root`]; yapılandırması olmayan projede başlatılmaz). Belge eşitlemesi ve tamamlama alırlar,
 /// diğer istekler (hover, tanım…) yalnız ana sunucuya gider.
 pub fn linters_for(lang: Language) -> Vec<ServerSpec> {
@@ -233,6 +273,7 @@ pub fn linters_for(lang: Language) -> Vec<ServerSpec> {
     match lang {
         L::TypeScript | L::Tsx | L::JavaScript | L::Jsx => vec![eslint(), tailwind()],
         L::Css | L::Html => vec![tailwind()],
+        L::Java | L::Yaml | L::Properties => vec![spring_boot()],
         _ => Vec::new(),
     }
 }
@@ -240,6 +281,15 @@ pub fn linters_for(lang: Language) -> Vec<ServerSpec> {
 /// Ek sunucunun kökü: işaret dosyası; Tailwind'de ayrıca `tailwindcss` bağımlılığı olan en yakın `package.json`
 /// (Tailwind v4'te yapılandırma dosyası yok).
 pub fn extra_root(spec: &ServerSpec, file: &Path) -> Option<PathBuf> {
+    if spec.id == "spring_boot" {
+        let name = file.file_name()?.to_string_lossy();
+        let config = [".yml", ".yaml", ".properties"].iter().any(|e| name.ends_with(e));
+        let boot_config = name.starts_with("application") || name.starts_with("bootstrap");
+        return (!config || boot_config)
+            .then(|| java::is_spring_boot(file))
+            .filter(|b| *b)
+            .and_then(|_| java::java_root(file));
+    }
     let marked = java::find_root_with(file, spec.root_markers);
     if marked.is_some() || spec.id != "tailwindcss" {
         return marked;
@@ -287,6 +337,8 @@ pub struct Launch {
     pub init_options: Value,
     /// Kullanıcıya gösterilecek uyarı (ör. jdtls için Java 25+ yok).
     pub warning: Option<String>,
+    /// Sürece eklenecek ortam değişkenleri (ör. kotlin-lsp için `JAVA_HOME`).
+    pub env: Vec<(String, PathBuf)>,
 }
 
 /// İkiliyi bulup komutu kurar; ikili yoksa `None` ("server not found").
@@ -298,19 +350,49 @@ pub fn launch_for(spec: &ServerSpec, root: &Path, config: &LspConfig) -> Option<
         settings: Value::Object(Default::default()),
         init_options: Value::Null,
         warning: None,
+        env: Vec::new(),
     };
     if spec.id == "jdtls" {
         let jdks = java::find_jdks(&config.jdk_search);
-        let j = java::jdtls_launch(root, &config.cache_dir, &jdks, config.mason_share().as_deref());
+        let j =
+            java::jdtls_launch(root, &config.cache_dir, &jdks, config.mason_share().as_deref(), config.java_on_demand);
         launch.args = j.args;
         launch.settings = j.settings;
         launch.init_options = j.init_options;
+        if config.spring_boot
+            && let Some(bundles) = launch.init_options["bundles"].as_array_mut()
+        {
+            bundles.extend(spring_jdtls_bundles().iter().map(|p| json!(p.display().to_string())));
+        }
         if j.missing_java {
             launch.warning = Some(format!(
                 "jdtls requires Java {}+ but none was found. Install: brew install openjdk",
                 java::JDTLS_MIN_JAVA
             ));
         }
+    } else if spec.id == "kotlin_ls" {
+        match java::jdtls_java(&java::find_jdks(&config.jdk_search))
+            .and_then(|java| Some(java.parent()?.parent()?.to_path_buf()))
+        {
+            Some(home) => launch.env.push(("JAVA_HOME".into(), home)),
+            None => {
+                launch.warning = Some(format!(
+                    "kotlin-lsp requires Java {}+ but none was found. Install: brew install openjdk",
+                    java::JDTLS_MIN_JAVA
+                ))
+            }
+        }
+    } else if spec.id == "spring_boot" {
+        match java::find_jdks(&config.jdk_search).range(21..).next_back() {
+            Some((_, home)) => launch.env.push(("JAVA_HOME".into(), home.clone())),
+            None => {
+                launch.warning =
+                    Some("Spring Boot Language Server requires Java 21+. Install: brew install openjdk".into())
+            }
+        }
+        // Classpath dinlemesi jdtls projeyi içe aktarınca (`vscode-spring-boot.ls.start`) açılır; erken açılırsa 10 sn'de vazgeçer.
+        launch.init_options =
+            json!({ "workspaceFolders": [super::uri::path_to_uri(root)], "enableJdtClasspath": false });
     } else if spec.id == "eslint" {
         launch.settings = eslint_settings(root);
     } else if spec.id == "tailwindcss" {
@@ -384,6 +466,8 @@ mod tests {
             extra_bin_dirs: vec![mason.clone()],
             cache_dir: tmp.path().join("cache"),
             jdk_search: java::JdkSearch { homebrew_opt: vec![], jvm_dirs: vec![] },
+            spring_boot: false,
+            java_on_demand: false,
         };
         assert_eq!(config.find_binary("vtsls"), Some(mason.join("vtsls")));
         assert_eq!(config.find_binary("marksman"), None);
@@ -420,5 +504,27 @@ mod tests {
         fs::write(t.join("rs/crates/x/Cargo.toml"), "[package]\n").unwrap();
         let ra = server_for(Language::Rust).unwrap();
         assert_eq!(root_for(&ra, &t.join("rs/crates/x/src/lib.rs")), t.join("rs"));
+    }
+
+    #[test]
+    fn spring_boot_attaches_only_to_boot_projects_and_boot_yaml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = tmp.path();
+        let spring = linters_for(Language::Java).into_iter().find(|s| s.id == "spring_boot").unwrap();
+        fs::create_dir_all(t.join("boot/src/main/resources")).unwrap();
+        fs::create_dir_all(t.join("plain/src")).unwrap();
+        fs::write(t.join("boot/pom.xml"), "<artifactId>spring-boot-starter-web</artifactId>").unwrap();
+        fs::write(t.join("plain/pom.xml"), "<artifactId>junit</artifactId>").unwrap();
+        assert_eq!(extra_root(&spring, &t.join("boot/src/A.java")), Some(t.join("boot")));
+        assert_eq!(extra_root(&spring, &t.join("boot/src/main/resources/application-dev.yml")), Some(t.join("boot")));
+        assert_eq!(extra_root(&spring, &t.join("boot/src/main/resources/logback.yml")), None, "not a Boot config");
+        assert_eq!(
+            extra_root(&spring, &t.join("boot/src/main/resources/application.properties")),
+            Some(t.join("boot"))
+        );
+        assert_eq!(extra_root(&spring, &t.join("boot/src/main/resources/messages.properties")), None);
+        assert_eq!(spring_language_id(Language::Properties), "spring-boot-properties");
+        assert_eq!(extra_root(&spring, &t.join("plain/src/A.java")), None, "not a Spring Boot project");
+        assert_eq!(spring_language_id(Language::Yaml), "spring-boot-properties-yaml");
     }
 }

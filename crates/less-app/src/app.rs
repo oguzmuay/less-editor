@@ -233,6 +233,9 @@ impl LessApp {
     }
 
     fn save_settings(&mut self) {
+        // `:options` bu ayarları doğrudan dosyaya yazar; eski kopyayla ezilmesin.
+        let disk = Settings::load();
+        (self.settings.spring_boot, self.settings.java_on_demand) = (disk.spring_boot, disk.java_on_demand);
         if let Err(e) = self.settings.save() {
             self.toast.error(format!("Could not save settings: {e}"));
         }

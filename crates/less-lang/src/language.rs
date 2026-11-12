@@ -23,6 +23,8 @@ pub enum Language {
     Kotlin,
     Go,
     Python,
+    /// Java `.properties` (Spring Boot `application*.properties`).
+    Properties,
 }
 
 /// Bir dilin yorum işaretleri (Cmd+/ ve "yorum içinde mi" kararları için).
@@ -51,7 +53,7 @@ const BRACES_OUT: &[&str] = &["}", ")", "]"];
 
 impl Language {
     /// Tüm diller (testler ve seçiciler için).
-    pub const ALL: [Language; 18] = [
+    pub const ALL: [Language; 19] = [
         Language::Java,
         Language::TypeScript,
         Language::Tsx,
@@ -70,6 +72,7 @@ impl Language {
         Language::Kotlin,
         Language::Go,
         Language::Python,
+        Language::Properties,
     ];
 
     /// Dosya yolundan dili bulur: önce tam dosya adı (`Dockerfile` yok; `.bashrc`, `Cargo.lock`), sonra uzantı.
@@ -108,6 +111,7 @@ impl Language {
             "kt" | "kts" => Language::Kotlin,
             "go" => Language::Go,
             "py" | "pyi" | "pyw" => Language::Python,
+            "properties" => Language::Properties,
             _ => return None,
         })
     }
@@ -159,6 +163,7 @@ impl Language {
             Language::Kotlin => "Kotlin",
             Language::Go => "Go",
             Language::Python => "Python",
+            Language::Properties => "Properties",
         }
     }
 
@@ -183,6 +188,7 @@ impl Language {
             Language::Kotlin => "kotlin",
             Language::Go => "go",
             Language::Python => "python",
+            Language::Properties => "properties",
         }
     }
 
@@ -199,7 +205,7 @@ impl Language {
             | Language::Kotlin
             | Language::Go => c_like,
             Language::Json => CommentTokens { line: Some("//"), block: Some(("/*", "*/")) },
-            Language::Yaml | Language::Toml | Language::Bash | Language::Python => {
+            Language::Yaml | Language::Toml | Language::Bash | Language::Python | Language::Properties => {
                 CommentTokens { line: Some("#"), block: None }
             }
             Language::Markdown | Language::Html => CommentTokens { line: None, block: Some(("<!--", "-->")) },
@@ -225,7 +231,7 @@ impl Language {
             | Language::Css
             | Language::Toml => spaces(2, BRACES_IN, BRACES_OUT),
             Language::Yaml => spaces(2, &[":", "|", ">", "- "], &[]),
-            Language::Markdown => spaces(2, &[], &[]),
+            Language::Markdown | Language::Properties => spaces(2, &[], &[]),
             Language::Sql => spaces(2, &["("], &[")"]),
             Language::Lua => spaces(
                 2,
@@ -301,6 +307,7 @@ mod tests {
             ("build.gradle.kts", Some(Language::Kotlin)),
             ("main.go", Some(Language::Go)),
             ("app.py", Some(Language::Python)),
+            ("src/main/resources/application.properties", Some(Language::Properties)),
             ("noext", None),
             ("photo.png", None),
         ];

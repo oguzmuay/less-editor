@@ -61,6 +61,7 @@ fn load(lang: Language) -> Result<Grammar, String> {
         L::Kotlin => build(tree_sitter_kotlin_sg::LANGUAGE.into(), &[tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY]),
         L::Go => build(tree_sitter_go::LANGUAGE.into(), &[tree_sitter_go::HIGHLIGHTS_QUERY]),
         L::Python => build(tree_sitter_python::LANGUAGE.into(), &[tree_sitter_python::HIGHLIGHTS_QUERY]),
+        L::Properties => build(tree_sitter_properties::LANGUAGE.into(), &[tree_sitter_properties::HIGHLIGHTS_QUERY]),
     }
 }
 

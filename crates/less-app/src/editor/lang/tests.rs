@@ -159,6 +159,8 @@ fn fake_lang(p: &Project) -> (Lang, Receiver<String>) {
         extra_bin_dirs: vec![],
         cache_dir: p.root.join("cache"),
         jdk_search: less_lang::java::JdkSearch { homebrew_opt: vec![], jvm_dirs: vec![] },
+        spring_boot: false,
+        java_on_demand: false,
     };
     let mut lsp = LspManager::new(config);
     let settings = serde_json::Value::Object(Default::default());
@@ -489,6 +491,8 @@ fn completion_lang(p: &Project) -> (Lang, Receiver<String>) {
         extra_bin_dirs: vec![],
         cache_dir: p.root.join("cache"),
         jdk_search: less_lang::java::JdkSearch { homebrew_opt: vec![], jvm_dirs: vec![] },
+        spring_boot: false,
+        java_on_demand: false,
     };
     let mut lsp = LspManager::new(config);
     lsp.connect_streams("vtsls", &p.root, client_read, client_write, serde_json::json!({}));
