@@ -74,7 +74,13 @@ pub fn branch_rows(history: &History) -> Vec<BranchRow> {
 pub fn draw_branches(panel: &mut GitPanel, ui: &mut Ui, cx: &mut Cx) {
     let palette = cx.palette;
     ui.painter().rect_filled(ui.max_rect(), 0.0, color(palette.surface));
-    header(ui, palette, "BRANCHES", cx.focused && panel.history_part == less_workbench::layout::StripPart::Branches);
+    header(
+        ui,
+        palette,
+        "BRANCHES",
+        BRANCH_HINT,
+        cx.focused && panel.history_part == less_workbench::layout::StripPart::Branches,
+    );
     let rows = branch_rows(&panel.history);
     let selected =
         panel.history.branch_cursor.as_deref().and_then(|id| rows.iter().position(|r| r.id() == id)).unwrap_or(0);
@@ -109,7 +115,13 @@ pub fn draw_history(panel: &mut GitPanel, ui: &mut Ui, cx: &mut Cx) {
     let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 0.0, color(palette.surface));
     let title = history_title(panel);
-    header(ui, palette, &title, cx.focused && panel.history_part == less_workbench::layout::StripPart::History);
+    header(
+        ui,
+        palette,
+        &title,
+        COMMIT_HINT,
+        cx.focused && panel.history_part == less_workbench::layout::StripPart::History,
+    );
     if let Some(error) = &panel.history.error {
         ui.painter().text(
             rect.left_top() + vec2(14.0, HEAD_H + 14.0),
@@ -179,10 +191,27 @@ fn history_title(panel: &GitPanel) -> String {
     format!("GIT HISTORY · {repo} · {mode}{file}")
 }
 
-fn header(ui: &mut Ui, palette: &Palette, title: &str, focused: bool) {
+const COMMIT_HINT: &str = "Enter/dbl-click: open diff · g: switch repo · a: all branches · f: file history · y: copy hash · Tab: branches · R: refresh · q: close";
+const BRANCH_HINT: &str = "Enter: show history · c: checkout · m: menu · g: repo · Tab: commits";
+
+/// Başlık solda, odaktaki bölümün tuş rehberi sağda çizilir; dar şeritte rehber kırpılır.
+fn header(ui: &mut Ui, palette: &Palette, title: &str, hint: &str, focused: bool) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEAD_H), Sense::hover());
     let tint = if focused { palette.accent } else { palette.comment };
-    ui.painter().text(rect.left_center() + vec2(12.0, 0.0), Align2::LEFT_CENTER, title, ui_font(11.0), color(tint));
+    let painter = ui.painter_at(rect);
+    let title_w = painter
+        .text(rect.left_center() + vec2(12.0, 0.0), Align2::LEFT_CENTER, title, ui_font(11.0), color(tint))
+        .width();
+    let hint_w = painter.layout_no_wrap(hint.to_owned(), ui_font(10.5), color(palette.comment)).size().x;
+    if rect.width() > title_w + hint_w + 40.0 {
+        painter.text(
+            rect.right_center() - vec2(12.0, 0.0),
+            Align2::RIGHT_CENTER,
+            hint,
+            ui_font(10.5),
+            color(palette.comment),
+        );
+    }
 }
 
 fn draw_branch_row(ui: &mut Ui, palette: &Palette, row: &BranchRow, rect: Rect, selected: bool, panel: &GitPanel) {
