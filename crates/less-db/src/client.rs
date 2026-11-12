@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Sorgu zaman aşımı (#47: 5 dk).
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(300);
@@ -48,11 +48,14 @@ impl std::fmt::Display for DriverError {
 
 impl std::error::Error for DriverError {}
 
+/// Yanıt beklerken sürecin bitip bitmediğine bakma aralığı.
+const EXIT_POLL: Duration = Duration::from_millis(100);
+
 type Pending = Arc<Mutex<HashMap<u64, Sender<Result<Value, DriverError>>>>>;
 
 /// Çalışan bir sürücü sürecine bağlı istemci. Düşürülünce süreç sonlandırılır.
 pub struct DriverClient {
-    child: Child,
+    child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
     pending: Pending,
     next_id: Mutex<u64>,
@@ -113,10 +116,18 @@ impl DriverClient {
                 }
             });
         }
-        Ok(DriverClient { child, stdin: Mutex::new(stdin), pending, next_id: Mutex::new(1), stderr_tail })
+        Ok(DriverClient {
+            child: Mutex::new(child),
+            stdin: Mutex::new(stdin),
+            pending,
+            next_id: Mutex::new(1),
+            stderr_tail,
+        })
     }
 
-    /// Ham istek: yanıt ya da hata. Yanıt gelmezse `timeout` sonunda `Timeout`.
+    /// Ham istek: yanıt ya da hata. Yanıt gelmezse `timeout` sonunda `Timeout`; süreç bu arada biterse `Crashed`.
+    /// Çıkış, stdout EOF'una güvenmeden `try_wait` ile de yoklanır: macOS'ta pipe'lar atomik CLOEXEC almadığından
+    /// paralel başlatılan başka bir süreç uçları devralıp EOF'u geciktirebilir.
     pub fn call_raw(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, DriverError> {
         let id = {
             let mut n = self.next_id.lock().map_err(|_| DriverError::Protocol("poisoned".into()))?;
@@ -136,14 +147,27 @@ impl DriverClient {
             self.forget(id);
             return Err(DriverError::Crashed(format!("{e} {}", self.stderr())));
         }
-        match rx.recv_timeout(timeout) {
-            Ok(r) => r,
-            Err(RecvTimeoutError::Timeout) => {
-                self.forget(id);
-                Err(DriverError::Timeout)
+        let deadline = Instant::now() + timeout;
+        loop {
+            let slice = deadline.saturating_duration_since(Instant::now()).min(EXIT_POLL);
+            match rx.recv_timeout(slice) {
+                Ok(r) => return r,
+                Err(RecvTimeoutError::Disconnected) => return Err(DriverError::Crashed(self.stderr())),
+                Err(RecvTimeoutError::Timeout) => {}
             }
-            Err(RecvTimeoutError::Disconnected) => Err(DriverError::Crashed(self.stderr())),
+            if self.exited() {
+                self.forget(id);
+                return rx.try_recv().unwrap_or_else(|_| Err(DriverError::Crashed(self.stderr())));
+            }
+            if Instant::now() >= deadline {
+                self.forget(id);
+                return Err(DriverError::Timeout);
+            }
         }
+    }
+
+    fn exited(&self) -> bool {
+        self.child.lock().map(|mut c| !matches!(c.try_wait(), Ok(None))).unwrap_or(true)
     }
 
     fn forget(&self, id: u64) {
@@ -209,14 +233,18 @@ impl DriverClient {
     /// Nazikçe kapatır; süreç hemen bitmezse öldürülür.
     pub fn close(mut self) {
         let _ = self.call_raw(METHOD_CLOSE, Value::Null, Duration::from_secs(2));
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Ok(c) = self.child.get_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     }
 }
 
 impl Drop for DriverClient {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Ok(c) = self.child.get_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     }
 }

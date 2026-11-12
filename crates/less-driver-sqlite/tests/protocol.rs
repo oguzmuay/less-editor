@@ -149,6 +149,21 @@ fn driver_crash_is_error_not_panic() {
     assert!(DriverClient::spawn(std::path::Path::new("/nonexistent/driver")).is_err());
 }
 
+/// Ölen sürücünün stdout'unu başka bir süreç tutsa da (EOF gelmez) istek `Timeout` beklemeden `Crashed` döner.
+#[test]
+fn driver_crash_detected_while_stdout_is_held_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("die.sh");
+    std::fs::write(&script, "#!/bin/sh\nsleep 30 &\nexit 3\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let c = DriverClient::spawn(&script).unwrap();
+    let started = std::time::Instant::now();
+    let err = c.list_schemas().unwrap_err();
+    assert!(matches!(err, DriverError::Crashed(_)), "{err:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
+}
+
 #[test]
 fn cancel_interrupts_running_query() {
     let dir = tempfile::tempdir().unwrap();
