@@ -1,4 +1,0 @@
-#!/bin/sh
-# less-editor: starts LESS on Linux (Ghostty GTK build + bundled LESS defaults).
-here=$(dirname "$(readlink -f "$0")")
-exec "$here/../lib/less-editor/ghostty" --config-file="$here/../share/less/defaults.ghostty" "$@"

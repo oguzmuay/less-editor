@@ -1,0 +1,16 @@
+[package]
+name = "less-git"
+description = "Git paneli, geçmiş grafiği, blame, diff, merge çözümü."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+notify = "8"
+similar = "2"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,19 @@
+[package]
+name = "less-db"
+description = "Database paneli çekirdeği: bağlantı kaydı, sürücü protokolü, sürücü indirme yöneticisi, sorgu sınıflandırıcı."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+ureq = "2"
+unicode-width = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

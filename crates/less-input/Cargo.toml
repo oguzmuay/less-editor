@@ -1,0 +1,12 @@
+[package]
+name = "less-input"
+description = "Mod motoru (Normal / Vim) ve tuş haritası. Varsayılan mod Vim."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+less-core = { path = "../less-core" }

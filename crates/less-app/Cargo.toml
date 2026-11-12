@@ -1,0 +1,35 @@
+[package]
+name = "less-app"
+description = "LESS-rs uygulaması (ikili)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "less-rs"
+path = "src/main.rs"
+
+[dependencies]
+arboard = { version = "3.7", default-features = false }
+eframe = "0.37"
+less-ai = { path = "../less-ai" }
+less-core = { path = "../less-core" }
+less-db = { path = "../less-db" }
+less-git = { path = "../less-git" }
+less-input = { path = "../less-input" }
+less-lang = { path = "../less-lang" }
+less-run = { path = "../less-run" }
+less-theme = { path = "../less-theme" }
+less-workbench = { path = "../less-workbench" }
+less-workspace = { path = "../less-workspace" }
+lsp-types = "0.97"
+pulldown-cmark = { version = "0.13.6", default-features = false }
+regex = "1.13"
+rfd = "0.18"
+ropey = { version = "1.6.1", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+
+[lints]
+workspace = true

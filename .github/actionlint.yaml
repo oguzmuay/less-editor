@@ -1,3 +1,0 @@
-# GitHub-hosted labels newer than actionlint's built-in list (see actions/runner-images README).
-self-hosted-runner:
-  labels: [xcode-27, ubuntu-26.04, ubuntu-26.04-arm]

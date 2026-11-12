@@ -1,0 +1,9 @@
+[package]
+name = "less-theme"
+description = "Tema ve font: IntelliJ paletleri, canlı önizleme, kalıcı seçim."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

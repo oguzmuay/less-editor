@@ -1,0 +1,18 @@
+[package]
+name = "less-driver-postgres"
+description = "LESS-rs PostgreSQL sürücüsü (stdio JSON-RPC)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "less-driver-postgres"
+path = "src/main.rs"
+
+[dependencies]
+less-db = { path = "../less-db" }
+postgres = "0.19"
+serde_json = "1"
+
+[lints]
+workspace = true

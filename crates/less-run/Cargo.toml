@@ -1,0 +1,19 @@
+[package]
+name = "less-run"
+description = "Run paneli: Spring / Node keşfi, süreç ve log yönetimi, DAP köprüsü ve debug değişken ağacı."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nix = { version = "0.28", default-features = false, features = ["signal"] }
+portable-pty = "0.9"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

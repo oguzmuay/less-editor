@@ -1,0 +1,21 @@
+[package]
+name = "less-driver-sqlite"
+description = "LESS-rs SQLite sürücüsü (stdio JSON-RPC)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "less-driver-sqlite"
+path = "src/main.rs"
+
+[dependencies]
+less-db = { path = "../less-db" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
