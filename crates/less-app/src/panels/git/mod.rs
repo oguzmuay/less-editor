@@ -786,6 +786,7 @@ impl GitPanel {
                         self.history.branch = None;
                         self.history.all = false;
                         self.refresh_all(cx);
+                        cx.refresh_files();
                     }
                     Err(error) => cx.error(error.to_string()),
                 }

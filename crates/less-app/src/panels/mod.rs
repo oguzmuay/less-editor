@@ -116,13 +116,35 @@ pub trait Panel {
 /// Panelin host'tan istediği işler; çağrı bitince sırayla uygulanır.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
-    OpenFile { path: PathBuf, line: Option<usize> },
-    OpenText { title: String, text: String, language: Option<Language> },
-    OpenTab { owner: &'static str, key: String, title: String },
-    CloseTab { owner: &'static str, key: String },
+    OpenFile {
+        path: PathBuf,
+        line: Option<usize>,
+    },
+    OpenText {
+        title: String,
+        text: String,
+        language: Option<Language>,
+    },
+    OpenTab {
+        owner: &'static str,
+        key: String,
+        title: String,
+    },
+    CloseTab {
+        owner: &'static str,
+        key: String,
+    },
     Layout(LayoutOp),
-    Notify { text: String, error: bool },
-    Send { topic: String, data: String },
+    Notify {
+        text: String,
+        error: bool,
+    },
+    Send {
+        topic: String,
+        data: String,
+    },
+    /// Files ağacını ve dosya indeksini diskten yenile (checkout sonrası).
+    RefreshFiles,
     Quit,
 }
 
@@ -201,6 +223,11 @@ impl Cx<'_> {
     /// Paneller arası mesaj: tüm panellere `Event::Message` olarak gider (gönderen dahil).
     pub fn send(&mut self, topic: impl Into<String>, data: impl Into<String>) {
         self.requests.push(Request::Send { topic: topic.into(), data: data.into() });
+    }
+
+    /// Çalışma ağacı değişti (checkout): Files ağacı ve dosya indeksi yenilensin.
+    pub fn refresh_files(&mut self) {
+        self.requests.push(Request::RefreshFiles);
     }
 
     /// Ertelenen kapanışı yeniden ister (`Panel::can_quit`).

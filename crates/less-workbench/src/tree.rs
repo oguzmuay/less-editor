@@ -28,6 +28,20 @@ impl Node {
         }
     }
 
+    /// Okunmuş klasörleri diskten yeniden okur; hâlâ var olan alt klasörlerin açık / okunmuş durumu korunur.
+    fn refresh(&mut self) {
+        let Some(old) = self.children.take() else { return };
+        let mut fresh = read_dir(&self.path);
+        for node in &mut fresh {
+            if let Some(prev) = old.iter().find(|o| o.path == node.path && o.is_dir == node.is_dir) {
+                node.expanded = prev.expanded;
+                node.children = prev.children.as_ref().map(|_| Vec::new());
+                node.refresh();
+            }
+        }
+        self.children = Some(fresh);
+    }
+
     fn find_mut(&mut self, path: &Path) -> Option<&mut Node> {
         if self.path == path {
             return Some(self);
@@ -121,6 +135,12 @@ impl FileTree {
         true
     }
 
+    /// Diskteki değişiklikleri (branch değişimi, dışarıdan eklenen / silinen dosyalar) ağaca yansıtır; açık klasörler
+    /// açık kalır.
+    pub fn refresh(&mut self) {
+        self.roots.iter_mut().for_each(Node::refresh);
+    }
+
     /// Görünen satırlar (açık klasörlerin içi dahil), yukarıdan aşağı.
     pub fn rows(&self) -> Vec<Row> {
         fn walk(n: &Node, depth: usize, out: &mut Vec<Row>) {
@@ -166,6 +186,26 @@ mod tests {
         assert!(tree.reveal(&root.join("src/inner/x")));
         assert!(tree.rows().iter().any(|r| r.name == "inner" && r.expanded));
         assert!(!tree.reveal(Path::new("/elsewhere/file")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refresh_picks_up_disk_changes_and_keeps_expanded_dirs() {
+        let root = std::env::temp_dir().join(format!("less-rs-tree-refresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/old.rs"), "").unwrap();
+        std::fs::write(root.join("gone.txt"), "").unwrap();
+
+        let mut tree = FileTree::new(std::slice::from_ref(&root));
+        tree.toggle(&root.join("src"));
+        std::fs::remove_file(root.join("gone.txt")).unwrap();
+        std::fs::write(root.join("src/new.rs"), "").unwrap();
+        std::fs::write(root.join("added.md"), "").unwrap();
+        tree.refresh();
+
+        let names: Vec<String> = tree.rows().into_iter().skip(1).map(|r| r.name).collect();
+        assert_eq!(names, ["src", "new.rs", "old.rs", "added.md"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -1,7 +1,7 @@
 //! Files paneli (host'un kendi sol paneli): klasör ağacı, klavye imleci, tık / Enter ile açma.
 //!
 //! Klavye (odaktayken): ↑↓ gez, → / Enter klasörü aç, ← kapat ya da üst klasöre çık; dosyada Enter önizleme tab'ında
-//! açar (odak Files'ta kalır, #38 #55), açık dosyada ikinci Enter normal tab yapıp koda geçer. Fare: tek tık önizleme,
+//! açar (odak Files'ta kalır, #38 #55), açık dosyada ikinci Enter normal tab yapıp koda geçer; `r` ağacı diskten yeniler. Fare: tek tık önizleme,
 //! çift tık normal tab. İmleç satırı her zaman görünür kalır (üstte / altta iki satır pay).
 
 use std::path::{Path, PathBuf};
@@ -65,6 +65,12 @@ impl Files {
         ok
     }
 
+    /// Ağacı diskten yeniler (açık klasörler ve imleç korunur; imleç satırı silindiyse `key` ilk satırdan devam eder).
+    pub fn refresh(&mut self) {
+        self.tree.refresh();
+        self.reveal_cursor = true;
+    }
+
     /// Cmd+N için hedef klasör: seçili klasörün kendisi, dosyanın üst klasörü, seçim yoksa ilk kök (#53).
     pub fn new_file_dir(&self) -> PathBuf {
         let rows = self.tree.rows();
@@ -80,6 +86,10 @@ impl Files {
     pub fn key(&mut self, k: &KeyEvent, active: Option<&Path>) -> FilesOutcome {
         if k.mods.cmd || k.mods.alt || k.mods.ctrl {
             return FilesOutcome::Unhandled;
+        }
+        if k.is_char('r') {
+            self.refresh();
+            return FilesOutcome::Handled;
         }
         let (up, down, left, right, enter) =
             (k.key == Key::Up, k.key == Key::Down, k.key == Key::Left, k.key == Key::Right, k.key == Key::Enter);

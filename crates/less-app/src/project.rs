@@ -1012,7 +1012,7 @@ impl ProjectView {
         };
         match crate::files::create_new(&path) {
             Ok(()) => {
-                self.files = Files::new(&self.roots);
+                self.files.refresh();
                 self.files.reveal(&path);
                 self.open_file(&path, ctx, p);
                 self.focus_code_here();
@@ -1213,8 +1213,18 @@ impl ProjectView {
                 self.lang_event(&ev, ctx, p);
                 self.broadcast(&ev, ctx, p);
             }
+            Request::RefreshFiles => self.refresh_files(ctx),
             Request::Quit => self.close_window(ctx, p),
         }
+    }
+
+    /// Files ağacını (açık klasörleri koruyarak) ve dosya indeksini diskten yeniler; etkin dosya görünür kalır.
+    fn refresh_files(&mut self, ctx: &egui::Context) {
+        self.files.refresh();
+        if let Some(path) = self.tabs.active_path() {
+            self.files.reveal(&path);
+        }
+        self.index.refresh(ctx, &self.roots);
     }
 
     // ---- mesajlar ----
@@ -1408,13 +1418,7 @@ impl ProjectView {
                     self.effects.extend(fx);
                 }
             }
-            PickerCommand::RefreshFiles => {
-                self.files = Files::new(&self.roots);
-                if let Some(path) = self.tabs.active_path() {
-                    self.files.reveal(&path);
-                }
-                self.index.refresh(ctx, &self.roots);
-            }
+            PickerCommand::RefreshFiles => self.refresh_files(ctx),
             PickerCommand::CloseTab => self.shortcut(Shortcut::CloseTab, ctx, p, actions),
             PickerCommand::NewTab => self.shortcut(Shortcut::NewTab, ctx, p, actions),
             PickerCommand::Pin => self.shortcut(Shortcut::Pin, ctx, p, actions),
