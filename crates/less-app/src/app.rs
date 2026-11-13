@@ -67,6 +67,8 @@ impl LessApp {
         let settings = Settings::load();
         let palette = less_theme::by_id(&settings.theme);
         egui_extras::install_image_loaders(&cc.egui_ctx);
+        // egui'nin Cmd+0 zoom sıfırlaması Git paneli kısayoluyla çakışır; zoom `zoom_keys` ile yapılır.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         fonts::install(&cc.egui_ctx, &settings.font);
         apply_visuals(&cc.egui_ctx, &palette);
         let logo = load_logo(&cc.egui_ctx);
@@ -268,6 +270,17 @@ fn load_logo(ctx: &egui::Context) -> egui::TextureHandle {
     ctx.load_texture("less-logo", image, egui::TextureOptions::LINEAR)
 }
 
+/// Cmd+= / Cmd++ büyütür, Cmd+- küçültür; Cmd+0 bilerek yok (Git paneli kısayolu).
+fn zoom_keys(ctx: &egui::Context) {
+    use egui::gui_zoom::kb_shortcuts::{ZOOM_IN, ZOOM_IN_SECONDARY, ZOOM_OUT};
+    if ctx.input_mut(|i| i.consume_shortcut(&ZOOM_IN) || i.consume_shortcut(&ZOOM_IN_SECONDARY)) {
+        egui::gui_zoom::zoom_in(ctx);
+    }
+    if ctx.input_mut(|i| i.consume_shortcut(&ZOOM_OUT)) {
+        egui::gui_zoom::zoom_out(ctx);
+    }
+}
+
 /// egui görünümünü paletin renkleriyle boyar (açık temada açık taban).
 fn apply_visuals(ctx: &egui::Context, p: &Palette) {
     let mut v = if p.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
@@ -290,6 +303,7 @@ impl eframe::App for LessApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let startup_ms = *self.startup_ms.get_or_insert_with(|| self.started.elapsed().as_millis());
         let ctx = ui.ctx().clone();
+        zoom_keys(&ctx);
         let locked = self.appearance.is_some() || self.notes.is_open();
         let had_appearance = self.appearance.is_some();
         let mut actions = Vec::new();
