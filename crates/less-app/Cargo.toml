@@ -17,7 +17,7 @@ less-ai = { path = "../less-ai" }
 less-core = { path = "../less-core" }
 less-db = { path = "../less-db" }
 less-git = { path = "../less-git" }
-less-input = { path = "../less-input" }
+less-input = { path = "../less-input", features = ["egui"] }
 less-lang = { path = "../less-lang" }
 less-run = { path = "../less-run" }
 less-theme = { path = "../less-theme" }

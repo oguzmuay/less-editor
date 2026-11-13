@@ -10,3 +10,10 @@ repository = "https://github.com/oguzmuay/less-editor"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# Debug info is the bulk of target/debug; panics keep file:line, lldb loses locals.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

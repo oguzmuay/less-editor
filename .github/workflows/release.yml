@@ -23,6 +23,8 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - id: v
         env:

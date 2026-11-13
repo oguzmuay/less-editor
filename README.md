@@ -26,6 +26,11 @@ tüm özellikleri (bkz. [`../FEATURES.md`](../FEATURES.md)) tek bir yerel uygula
 > Varlıklar: `crates/less-app/assets/icon.png`, `Phosphor-Regular.ttf` (MIT, `Phosphor-LICENSE.txt`). Varsayılan font
 > JetBrains Mono; seçili font sistemde yoksa egui varsayılanı kullanılır ve seçici girdiyi "not installed" gösterir.
 
+## Klonlama
+
+less-core, less-input, less-theme ve less-ai git submodule'dür: `git clone --recursive <url>` ya da klonladıktan sonra
+`git submodule update --init`. Paylaşılan crate değişince önce submodule içinde commit+push, sonra buradaki işaretçiyi commit et.
+
 ## Ana kararlar
 
 | Konu | Karar |
@@ -43,16 +48,16 @@ tüm özellikleri (bkz. [`../FEATURES.md`](../FEATURES.md)) tek bir yerel uygula
 less-rs/
   Cargo.toml            workspace
   crates/
-    less-core/          metin modeli (buffer, undo, seçim, çoklu imleç)
-    less-input/         mod motoru (Vim / Normal) + tuş haritası
+    less-core/          metin modeli (buffer, undo, seçim, çoklu imleç) (submodule)
+    less-input/         mod motoru (Vim / Normal) + tuş haritası (submodule)
     less-workbench/     panel yöneticisi, yerleşim, boyut sınırları, düzen kaydı
     less-lang/          LSP, tree-sitter, tooltip, problem verisi
     less-git/           Git paneli, geçmiş grafiği, blame, diff, merge
     less-run/           Run paneli, süreçler, DAP, debug değişkenleri
     less-db/            Database paneli çekirdeği + sürücü protokolü / indirme
-    less-ai/            AI sekmeleri, oturum izleme, .less/ai, LESS MCP
+    less-ai/            AI sekmeleri, oturum izleme, .less/ai, LESS MCP (submodule)
     less-workspace/     workspace, projeler, oturum, son proje
-    less-theme/         tema + font
+    less-theme/         tema + font (submodule)
     less-app/           ikili (`less-rs`)
   docs/
     PLAN.md             mimari + fazlar + açık sorular

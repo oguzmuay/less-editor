@@ -1,0 +1,12 @@
+[submodule "crates/less-core"]
+	path = crates/less-core
+	url = https://github.com/oguzmuay/less-core.git
+[submodule "crates/less-input"]
+	path = crates/less-input
+	url = https://github.com/oguzmuay/less-input.git
+[submodule "crates/less-theme"]
+	path = crates/less-theme
+	url = https://github.com/oguzmuay/less-theme.git
+[submodule "crates/less-ai"]
+	path = crates/less-ai
+	url = https://github.com/oguzmuay/less-ai.git
