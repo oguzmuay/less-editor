@@ -12,6 +12,7 @@ Normal modda (modeless) aynı Cmd kısayolları geçerlidir; Vim'e özgü tuşla
 |---|---|
 | Cmd+1 / 2 / 3 / 4 / 5 / 6 / 7 / 0 | Files / Kod / AI / Terminal / Database / Run / Git History / Git (aç, odakla, odaktaysa kapat) |
 | Cmd+M | Maven paneli (`:Maven`; Database'in yerinde): pom.xml modülleri, lifecycle ve plugin goal'ları. `j/k` gez, `Enter` / `l` çalıştır ya da aç, `h` kapat, `x` durdur, `r` yeniden tara, `n` yeni Maven projesi (`:MavenNew grup:artifact`), `q` kapat |
+| Files'ta harf yazmak | Hızlı arama: adı o önekle başlayan görünür satıra atlar (sorgu başlıkta), `↑↓` eşleşmeler arasında döner, `Backspace` siler, `Enter` / `Esc` aramayı kapatır. Cmd+R (Files odaktayken) ağacı diskten yeniler |
 | Cmd+Shift+0 | Panel boyutlarını sıfırla (`:UIReset`) |
 | Cmd+N | Notlar (Files panelinde: yeni dosya) |
 | Cmd+Shift+N | Yeni pencere |

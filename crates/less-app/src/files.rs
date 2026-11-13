@@ -1,8 +1,11 @@
 //! Files paneli (host'un kendi sol paneli): klasör ağacı, klavye imleci, tık / Enter ile açma.
 //!
 //! Klavye (odaktayken): ↑↓ gez, → / Enter klasörü aç, ← kapat ya da üst klasöre çık; dosyada Enter önizleme tab'ında
-//! açar (odak Files'ta kalır, #38 #55), açık dosyada ikinci Enter normal tab yapıp koda geçer; `r` ağacı diskten yeniler. Fare: tek tık önizleme,
+//! açar (odak Files'ta kalır, #38 #55), açık dosyada ikinci Enter normal tab yapıp koda geçer; Cmd+R ağacı diskten yeniler; Fare: tek tık önizleme,
 //! çift tık normal tab. İmleç satırı her zaman görünür kalır (üstte / altta iki satır pay).
+//!
+//! Hızlı arama: odaktayken harf yazmak görünen satırlarda adı o önekle başlayanlara atlar; sorgu başlıkta görünür,
+//! ↑↓ eşleşmeler arasında döner, Backspace siler, Enter / Esc / ← → aramayı kapatır ve normal gezinme sürer.
 
 use std::path::{Path, PathBuf};
 
@@ -38,11 +41,13 @@ pub struct Files {
     cursor: Option<PathBuf>,
     reveal_cursor: bool,
     scroll: f32,
+    /// Hızlı arama sorgusu (`None` = kapalı).
+    search: Option<String>,
 }
 
 impl Files {
     pub fn new(roots: &[PathBuf]) -> Self {
-        Self { tree: FileTree::new(roots), cursor: None, reveal_cursor: false, scroll: 0.0 }
+        Self { tree: FileTree::new(roots), cursor: None, reveal_cursor: false, scroll: 0.0, search: None }
     }
 
     /// Odak gelince: imleç geçersizse açık dosyaya, o da görünmüyorsa ilk satıra konur.
@@ -84,11 +89,43 @@ impl Files {
 
     /// Odaktayken tuş; `Unhandled` ise uygulama kısayoluna bakılır.
     pub fn key(&mut self, k: &KeyEvent, active: Option<&Path>) -> FilesOutcome {
+        if k.key == Key::Char('r') && k.mods.cmd && !k.mods.shift && !k.mods.alt && !k.mods.ctrl {
+            self.search = None;
+            self.refresh();
+            return FilesOutcome::Handled;
+        }
         if k.mods.cmd || k.mods.alt || k.mods.ctrl {
             return FilesOutcome::Unhandled;
         }
-        if k.is_char('r') {
-            self.refresh();
+        if let Some(query) = self.search.as_mut() {
+            match k.key {
+                Key::Esc | Key::Enter => {
+                    self.search = None;
+                    return FilesOutcome::Handled;
+                }
+                Key::Backspace => {
+                    query.pop();
+                    if query.is_empty() {
+                        self.search = None;
+                    } else {
+                        self.search_step(0);
+                    }
+                    return FilesOutcome::Handled;
+                }
+                Key::Up | Key::Down => {
+                    self.search_step(if k.key == Key::Up { -1 } else { 1 });
+                    return FilesOutcome::Handled;
+                }
+                Key::Char(c) => {
+                    query.push(c);
+                    self.search_step(0);
+                    return FilesOutcome::Handled;
+                }
+                _ => self.search = None,
+            }
+        } else if let Some(c) = k.plain_char().filter(|c| !c.is_whitespace()) {
+            self.search = Some(c.to_string());
+            self.search_step(0);
             return FilesOutcome::Handled;
         }
         let (up, down, left, right, enter) =
@@ -132,21 +169,55 @@ impl Files {
         out
     }
 
+    /// Görünen satırlardan adı sorguyla (büyük/küçük harf duyarsız) başlayanların sırası.
+    fn search_hits(&self, rows: &[Row]) -> Vec<usize> {
+        let Some(query) = self.search.as_deref().map(str::to_lowercase) else { return Vec::new() };
+        rows.iter().enumerate().filter(|(_, r)| r.name.to_lowercase().starts_with(&query)).map(|(i, _)| i).collect()
+    }
+
+    /// İmleci eşleşmeye taşır: `0` imleç eşleşiyorsa yerinde kalır yoksa ileriki ilk eşleşmeye, `1` / `-1`
+    /// sonraki / önceki eşleşmeye (uçlarda başa sarar). Eşleşme yoksa imleç kımıldamaz.
+    fn search_step(&mut self, step: i8) {
+        let rows = self.tree.rows();
+        let hits = self.search_hits(&rows);
+        let at = self.cursor.as_ref().and_then(|c| rows.iter().position(|r| &r.path == c)).unwrap_or(0);
+        let target = match step {
+            0 => hits.iter().find(|&&h| h >= at),
+            1 => hits.iter().find(|&&h| h > at),
+            _ => hits.iter().rev().find(|&&h| h < at),
+        }
+        .or(if step < 0 { hits.last() } else { hits.first() });
+        if let Some(&i) = target {
+            self.cursor = Some(rows[i].path.clone());
+            self.reveal_cursor = true;
+        }
+    }
+
     /// Ağacı çizer; tıklanan dosya `Preview` (tek tık) ya da `Open` (çift tık) olarak döner.
     pub fn show(&mut self, ui: &mut Ui, p: &Palette, focused: bool, active: Option<&Path>) -> Option<FilesOutcome> {
+        if !focused {
+            self.search = None;
+        }
         ui.painter().rect_filled(ui.max_rect(), 0.0, color(p.surface));
         ui.spacing_mut().item_spacing.y = 0.0;
         let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
-        let head_color = if focused { color(p.accent) } else { color(p.comment) };
-        ui.painter().text(
-            head.left_center() + vec2(14.0, 0.0),
-            Align2::LEFT_CENTER,
-            "FILES",
-            ui_font(11.0),
-            head_color,
-        );
         let rows = self.tree.rows();
         let cursor_idx = self.cursor.as_ref().and_then(|c| rows.iter().position(|r| &r.path == c));
+        let hits = self.search_hits(&rows);
+        let hl = self.search.as_ref().map_or(0, |q| q.chars().count());
+        match &self.search {
+            Some(query) => search_header(ui, p, head, query, &hits, cursor_idx),
+            None => {
+                let head_color = if focused { color(p.accent) } else { color(p.comment) };
+                ui.painter().text(
+                    head.left_center() + vec2(14.0, 0.0),
+                    Align2::LEFT_CENTER,
+                    "FILES",
+                    ui_font(11.0),
+                    head_color,
+                );
+            }
+        }
         let mut area = egui::ScrollArea::vertical().id_salt("files-tree").auto_shrink([false, false]);
         if std::mem::take(&mut self.reveal_cursor)
             && let Some(i) = cursor_idx
@@ -156,8 +227,12 @@ impl Files {
         let mut clicked: Option<(Row, bool)> = None;
         let out = area.show_rows(ui, TREE_ROW, rows.len(), |ui, range| {
             for (i, row) in rows.iter().enumerate().take(range.end).skip(range.start) {
-                let state =
-                    RowState { selected: active == Some(row.path.as_path()), cursor: Some(i) == cursor_idx, focused };
+                let state = RowState {
+                    selected: active == Some(row.path.as_path()),
+                    cursor: Some(i) == cursor_idx,
+                    focused,
+                    highlight: if hits.binary_search(&i).is_ok() { hl } else { 0 },
+                };
                 let resp = tree_row(ui, p, row, state);
                 if resp.double_clicked() {
                     clicked = Some((row.clone(), true));
@@ -168,6 +243,7 @@ impl Files {
         });
         self.scroll = out.state.clamped_offset().y;
         let (row, double) = clicked?;
+        self.search = None;
         self.cursor = Some(row.path.clone());
         if row.is_dir {
             if !double {
@@ -202,12 +278,28 @@ pub fn file_icon(name: &str) -> &'static str {
     }
 }
 
-/// Ağaç satırının durumu: açık tab'ın dosyası mı, klavye imleci üstünde mi, Files odakta mı.
+/// Arama açıkken başlık: büyüteç, sorgu ve `imleç/eşleşme` sayacı; eşleşme yoksa sorgu hata renginde.
+fn search_header(ui: &Ui, p: &Palette, head: egui::Rect, query: &str, hits: &[usize], cursor: Option<usize>) {
+    let painter = ui.painter();
+    let y = head.center().y;
+    let tint = if hits.is_empty() { color(p.error) } else { color(p.accent) };
+    painter.text(pos2(head.left() + 14.0, y), Align2::LEFT_CENTER, icon::MAGNIFYING_GLASS, ui_font(12.0), tint);
+    painter.text(pos2(head.left() + 32.0, y), Align2::LEFT_CENTER, query, ui_font(13.0), tint);
+    let count = match cursor.and_then(|c| hits.iter().position(|&h| h == c)) {
+        Some(n) => format!("{}/{}", n + 1, hits.len()),
+        None => format!("{}", hits.len()),
+    };
+    painter.text(pos2(head.right() - 12.0, y), Align2::RIGHT_CENTER, count, ui_font(11.0), color(p.comment));
+}
+
+/// Ağaç satırının durumu: açık tab'ın dosyası mı, klavye imleci üstünde mi, Files odakta mı; `highlight` adın
+/// aramayla eşleşen ilk kaç harfinin vurgulanacağı (0 = yok).
 #[derive(Clone, Copy)]
 struct RowState {
     selected: bool,
     cursor: bool,
     focused: bool,
+    highlight: usize,
 }
 
 /// Ağaç satırı. İmleç satırı Files odaktayken vurgu renginde, değilken sönük çizilir (IntelliJ'deki gibi).
@@ -237,7 +329,11 @@ fn tree_row(ui: &mut Ui, p: &Palette, row: &Row, state: RowState) -> Response {
     };
     painter.text(pos2(x, y), Align2::LEFT_CENTER, glyph, ui_font(14.0), color(tint));
     let text_color = if row.depth == 0 || selected { color(p.fg) } else { color(p.fg_dim) };
-    painter.text(pos2(x + 22.0, y), Align2::LEFT_CENTER, &row.name, ui_font(13.0), text_color);
+    let split = row.name.char_indices().nth(state.highlight).map_or(row.name.len(), |(i, _)| i);
+    let (head, tail) = if state.highlight > 0 { row.name.split_at(split) } else { ("", row.name.as_str()) };
+    let lead = painter.text(pos2(x + 22.0, y), Align2::LEFT_CENTER, head, ui_font(13.0), color(p.accent));
+    let start = if head.is_empty() { x + 22.0 } else { lead.right() };
+    painter.text(pos2(start, y), Align2::LEFT_CENTER, tail, ui_font(13.0), text_color);
     resp
 }
 
@@ -318,7 +414,47 @@ mod tests {
         let file = dir.join("a.txt");
         assert_eq!(f.key(&enter, None), FilesOutcome::Preview(file.clone()));
         assert_eq!(f.key(&enter, Some(&file)), FilesOutcome::FocusCode);
-        assert_eq!(f.key(&KeyEvent::char('x'), None), FilesOutcome::Unhandled);
+        assert_eq!(f.key(&KeyEvent::char(' '), None), FilesOutcome::Unhandled);
+        std::fs::write(dir.join("b.txt"), "x").unwrap();
+        let cmd_r = KeyEvent { mods: less_input::Mods { cmd: true, ..Default::default() }, ..KeyEvent::char('r') };
+        assert_eq!(f.key(&cmd_r, None), FilesOutcome::Handled);
+        assert!(f.tree.rows().iter().any(|r| r.name == "b.txt"), "Cmd+R reloads the tree");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn typing_jumps_to_prefix_arrows_cycle_and_enter_closes_search() {
+        let dir = std::env::temp_dir().join(format!("less-files-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["apple.rs", "Main.rs", "map.rs", "mod.rs", "zeta.rs"] {
+            std::fs::write(dir.join(name), "x").unwrap();
+        }
+        let mut f = Files::new(std::slice::from_ref(&dir));
+        f.focus(None);
+        let cursor = |f: &Files| f.cursor.as_ref().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+        let press = |f: &mut Files, k: Key| assert_eq!(f.key(&KeyEvent::plain(k), None), FilesOutcome::Handled);
+
+        press(&mut f, Key::Char('m'));
+        assert_eq!(cursor(&f), "Main.rs", "case-insensitive prefix");
+        press(&mut f, Key::Down);
+        assert_eq!(cursor(&f), "map.rs");
+        press(&mut f, Key::Down);
+        press(&mut f, Key::Down);
+        assert_eq!(cursor(&f), "Main.rs", "wraps around");
+        press(&mut f, Key::Up);
+        assert_eq!(cursor(&f), "mod.rs");
+        press(&mut f, Key::Char('a'));
+        assert_eq!(cursor(&f), "Main.rs", "narrowing moves to the next match");
+        press(&mut f, Key::Char('q'));
+        assert_eq!(cursor(&f), "Main.rs", "no match keeps the cursor");
+        press(&mut f, Key::Backspace);
+        press(&mut f, Key::Char('p'));
+        assert_eq!(cursor(&f), "map.rs");
+        press(&mut f, Key::Enter);
+        assert!(f.search.is_none());
+        press(&mut f, Key::Down);
+        assert_eq!(cursor(&f), "mod.rs", "arrows navigate normally after Enter");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
