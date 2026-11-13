@@ -5,6 +5,7 @@ mod appearance;
 mod clipboard;
 mod cmdline;
 mod dialogs;
+mod disk;
 mod dispatch;
 mod editor;
 mod files;

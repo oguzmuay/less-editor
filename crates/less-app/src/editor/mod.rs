@@ -31,6 +31,8 @@ pub struct EditorTab {
     pub mark: Option<(usize, Vec<(usize, usize)>)>,
     /// Markdown dosyası metin yerine önizleme olarak çiziliyor (#83, Cmd+P).
     pub md_preview: bool,
+    /// Son yüklenen ya da kaydedilen dosyanın disk damgası (dışarıdan değişikliği fark etmek için).
+    pub disk: crate::disk::Stamp,
     /// Yatay kaydırmanın en son imleci izlediği konum (fare tekerleğiyle kaydırınca geri sıçramasın).
     cursor_seen: Option<usize>,
     syntax: Option<Syntax>,
@@ -44,8 +46,9 @@ pub struct EditorTab {
 impl EditorTab {
     /// Dosyadan tab; dil uzantıdan, yorum işaretleri dilden gelir.
     pub fn load(path: &Path) -> Result<Self, String> {
+        let disk = crate::disk::stamp(path);
         let editor = Editor::load(path).map_err(|e| e.to_string())?;
-        Ok(Self::with_editor(editor, Some(path.to_path_buf()), Language::from_path(path), false))
+        Ok(Self { disk, ..Self::with_editor(editor, Some(path.to_path_buf()), Language::from_path(path), false) })
     }
 
     /// Bellekteki metinden tab (`read_only` ise düzenlenemez).
@@ -72,6 +75,7 @@ impl EditorTab {
             left_col: 0,
             mark: None,
             md_preview: false,
+            disk: None,
             cursor_seen: None,
             syntax,
             snapshot,
@@ -150,6 +154,7 @@ impl EditorTab {
             }
             None => self.editor.save()?,
         }
+        self.disk = self.path.as_deref().and_then(crate::disk::stamp);
         Ok(())
     }
 }

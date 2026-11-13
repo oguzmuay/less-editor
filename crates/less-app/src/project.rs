@@ -146,6 +146,8 @@ pub struct ProjectView {
     index: FileIndex,
     /// Diskteki değişikliklerde Files ağacını yenileyen izleyici; ilk karede başlar (`None` = denenmedi).
     files_watch: Option<Option<less_git::watch::RepoWatcher>>,
+    /// Diskte dışarıdan değişen açık dosyalar için soru penceresi.
+    disk_prompt: crate::disk::Prompt,
     /// En son etkin olan dosyalar, en yenisi başta (Cmd+E).
     mru: Vec<PathBuf>,
     /// Durum satırındaki mesaj (hata mı).
@@ -215,6 +217,7 @@ impl ProjectView {
             code_rect: Rect::NOTHING,
             index: FileIndex::default(),
             files_watch: None,
+            disk_prompt: crate::disk::Prompt::default(),
             mru: Vec::new(),
             status: None,
             messages: Vec::new(),
@@ -255,7 +258,13 @@ impl ProjectView {
         if !modal {
             let events = ui.input(|i| i.events.clone());
             let typed = keys::translate(&events);
-            if self.picker.is_some() {
+            if self.disk_prompt.is_open() {
+                for k in &typed {
+                    if let Some((path, choice)) = self.disk_prompt.key(k) {
+                        self.resolve_disk_change(&path, choice, &ctx, p);
+                    }
+                }
+            } else if self.picker.is_some() {
                 for k in &typed {
                     if let Some(Shortcut::Picker(mode)) = keys::shortcut(k) {
                         self.toggle_picker(&ctx, mode);
@@ -301,6 +310,7 @@ impl ProjectView {
         ui.painter().hline(full.left()..=full.right(), full.bottom() - STATUS_HEIGHT, line);
 
         self.picker_window(&ctx, p, settings, actions);
+        self.disk_window(&ctx, p);
         self.find_window(&ctx, p);
         self.cmdline_window(&ctx, p, full);
         self.run_app_commands(&ctx, p, actions);
@@ -752,23 +762,36 @@ impl ProjectView {
             }
             None => {
                 let Some(tab) = self.tabs.active_mut() else { return };
-                let Some(path) = tab.path().map(Path::to_path_buf) else { return };
                 if tab.editor().is_some_and(EditorTab::is_dirty) && !force {
                     self.error("No write since last change (add ! to override)");
                     return;
                 }
-                match EditorTab::load(&path) {
-                    Ok(new) => tab.kind = TabKind::Editor(Box::new(new)),
-                    Err(e) => return self.error(e),
-                }
-                let parts = CxParts { ctx, palette: p, roots: &self.roots, mode: self.engine.mode() };
-                let mut cx = parts.cx(None, &mut self.requests, "lang", false);
-                self.lang.closed(&path, &mut cx);
-                if let Some(tab) = self.tabs.active_editor() {
-                    let mut cx = parts.cx(None, &mut self.requests, "lang", false);
-                    self.lang.opened(tab, &mut cx);
+                if let Some(i) = self.tabs.active {
+                    self.reload_tab(i, ctx, p);
                 }
             }
+        }
+    }
+
+    /// Tab'ı diskten yeniden yükler (imleç aynı yere yakın kalır) ve dil sunucusuna yeniden açar.
+    fn reload_tab(&mut self, i: usize, ctx: &egui::Context, p: &Palette) {
+        let Some(tab) = self.tabs.tabs.get_mut(i) else { return };
+        let Some(path) = tab.path().map(Path::to_path_buf) else { return };
+        let cursor = tab.editor().map_or(0, |e| e.editor.cursor());
+        match EditorTab::load(&path) {
+            Ok(mut new) => {
+                let end = new.editor.buffer.rope().len_chars();
+                new.editor.set_selection(Selection::point(cursor.min(end)));
+                tab.kind = TabKind::Editor(Box::new(new));
+            }
+            Err(e) => return self.error(e),
+        }
+        let parts = CxParts { ctx, palette: p, roots: &self.roots, mode: self.engine.mode() };
+        let mut cx = parts.cx(None, &mut self.requests, "lang", false);
+        self.lang.closed(&path, &mut cx);
+        if let Some(tab) = self.tabs.tabs[i].editor() {
+            let mut cx = parts.cx(None, &mut self.requests, "lang", false);
+            self.lang.opened(tab, &mut cx);
         }
     }
 
@@ -1243,6 +1266,49 @@ impl ProjectView {
         });
         if watch.as_ref().is_some_and(|w| w.rx.try_iter().count() > 0) {
             self.refresh_files(ctx);
+            self.check_disk_changes();
+        }
+    }
+
+    /// Damgası değişen açık dosyaları soruya ekler; içerik bellektekiyle aynıysa yalnız damgayı günceller.
+    fn check_disk_changes(&mut self) {
+        for tab in &mut self.tabs.tabs {
+            let Some(editor) = tab.editor_mut().filter(|e| !e.read_only) else { continue };
+            let Some(path) = editor.path.clone() else { continue };
+            let now = crate::disk::stamp(&path);
+            if now.is_none() || now == editor.disk {
+                continue;
+            }
+            match less_core::editor::Editor::load(&path) {
+                Ok(disk) if disk.text() == editor.editor.text() => editor.disk = now,
+                Ok(_) => self.disk_prompt.push(path),
+                Err(_) => {}
+            }
+        }
+    }
+
+    fn disk_window(&mut self, ctx: &egui::Context, p: &Palette) {
+        let Some(path) = self.disk_prompt.paths.first().cloned() else { return };
+        let Some(tab) = self.tabs.tabs.iter().find(|t| t.path() == Some(&path)) else {
+            self.disk_prompt.paths.remove(0);
+            return;
+        };
+        let dirty = tab.editor().is_some_and(EditorTab::is_dirty);
+        let name = self.roots.iter().find_map(|r| path.strip_prefix(r).ok()).unwrap_or(&path).display().to_string();
+        if let Some((path, choice)) = self.disk_prompt.show(ctx, p, &name, dirty) {
+            self.resolve_disk_change(&path, choice, ctx, p);
+        }
+    }
+
+    fn resolve_disk_change(&mut self, path: &Path, choice: crate::disk::Choice, ctx: &egui::Context, p: &Palette) {
+        let Some(i) = self.tabs.tabs.iter().position(|t| t.path() == Some(path)) else { return };
+        match choice {
+            crate::disk::Choice::Reload => self.reload_tab(i, ctx, p),
+            crate::disk::Choice::Keep => {
+                if let Some(editor) = self.tabs.tabs[i].editor_mut() {
+                    editor.disk = crate::disk::stamp(path);
+                }
+            }
         }
     }
 
@@ -2285,6 +2351,33 @@ mod tests {
 
     fn active_text(view: &ProjectView) -> String {
         view.tabs.active_editor().unwrap().editor.text()
+    }
+
+    #[test]
+    fn external_change_asks_and_enter_reloads_from_disk() {
+        let (mut view, ctx, file) = project("diskchange", "one\n");
+        view.write_active(None, &ctx, &P);
+        view.check_disk_changes();
+        assert!(!view.disk_prompt.is_open(), "our own save does not ask");
+
+        std::fs::write(&file, "one\n").unwrap();
+        view.check_disk_changes();
+        assert!(!view.disk_prompt.is_open(), "same content only refreshes the stamp");
+
+        std::fs::write(&file, "two\n").unwrap();
+        view.check_disk_changes();
+        assert_eq!(view.disk_prompt.paths, std::slice::from_ref(&file));
+        frame(&mut view, &ctx, vec![key(EK::Enter, Modifiers::NONE)]);
+        assert!(!view.disk_prompt.is_open());
+        assert_eq!(active_text(&view), "two");
+
+        std::fs::write(&file, "three\n").unwrap();
+        view.check_disk_changes();
+        frame(&mut view, &ctx, vec![key(EK::Escape, Modifiers::NONE)]);
+        assert_eq!(active_text(&view), "two", "Esc keeps the in-memory text");
+        view.check_disk_changes();
+        assert!(!view.disk_prompt.is_open(), "a kept change is not asked again");
+        std::fs::remove_dir_all(file.parent().unwrap()).unwrap();
     }
 
     #[test]
