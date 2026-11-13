@@ -18,6 +18,7 @@ use crate::startup::{self, Launch};
 use crate::welcome::Welcome;
 use crate::widgets::{Toast, color};
 use crate::window;
+use crate::window_state::Windows;
 
 const APP_ICON: &[u8] = include_bytes!("../assets/icon.png");
 
@@ -55,12 +56,14 @@ pub struct LessApp {
     toast: Toast,
     /// Son gönderilen pencere başlığı; yalnız değişince `ViewportCommand::Title` yollanır.
     window_title: String,
+    /// Pencere durumu ve zoom'un proje başına kaydı.
+    windows: Windows,
     _instance: autorestore::Instance,
 }
 
 impl LessApp {
     /// Ayarları, fontları, temayı, örnek kaydını ve açılış hedefini kurar; `started` süreç başlangıcıdır.
-    pub fn new(cc: &eframe::CreationContext<'_>, started: Instant, launch: Launch) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, started: Instant, launch: Launch, windows: Windows) -> Self {
         let settings = Settings::load();
         let palette = less_theme::by_id(&settings.theme);
         egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -99,6 +102,7 @@ impl LessApp {
             notes: NotesWindow::default(),
             toast: Toast::default(),
             window_title: "LESS".to_owned(),
+            windows,
             _instance: instance,
         };
         if let Some(target) = target {
@@ -113,6 +117,7 @@ impl LessApp {
             Action::CloseProject => {
                 self.notes.close();
                 self.project = None;
+                self.windows.deselect();
                 self.welcome.reload();
             }
             Action::SetTheme(id) => {
@@ -174,6 +179,7 @@ impl LessApp {
         if let Err(e) = persistence::remember_project(&key, workspace.as_deref(), now) {
             self.toast.error(format!("Could not update the last project: {e}"));
         }
+        self.windows.select(&key);
         self.project = Some(ProjectView::new_with_key(title, existing, workspace.is_some(), self.settings.keymap, key));
     }
 
@@ -334,6 +340,7 @@ impl eframe::App for LessApp {
             }
         }
         self.toast.show(&ctx, &self.palette, center_x, ctx.content_rect().bottom() - 26.0);
+        self.windows.frame(&ctx);
         let title = self.project.as_ref().map_or("LESS", |project| project.title());
         if title != self.window_title {
             self.window_title = title.to_owned();

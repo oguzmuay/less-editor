@@ -24,12 +24,13 @@ mod sysinfo;
 mod welcome;
 mod widgets;
 mod window;
+mod window_state;
 
 use std::time::Instant;
 
 use eframe::egui;
 
-/// Pencereyi `LESS` başlığı, uygulama ikonu ve varsayılan boyutla açar; süreç başlangıcı açılış süresi için tutulur.
+/// Pencereyi `LESS` başlığı, uygulama ikonu ve en son pencerenin durumuyla (yoksa varsayılan boyutla) açar; süreç başlangıcı açılış süresi için tutulur.
 fn main() -> eframe::Result {
     let started = Instant::now();
     let launch = match startup::parse(std::env::args_os().skip(1)) {
@@ -58,9 +59,17 @@ fn main() -> eframe::Result {
         .with_fullsize_content_view(true)
         .with_titlebar_shown(false)
         .with_title_shown(false);
+    let windows = window_state::Windows::load();
+    if let Some(last) = windows.last() {
+        viewport = last.builder(viewport);
+    }
     if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")) {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
-    eframe::run_native("LESS", options, Box::new(move |cc| Ok(Box::new(app::LessApp::new(cc, started, launch)))))
+    eframe::run_native(
+        "LESS",
+        options,
+        Box::new(move |cc| Ok(Box::new(app::LessApp::new(cc, started, launch, windows)))),
+    )
 }
