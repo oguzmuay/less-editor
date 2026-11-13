@@ -194,6 +194,9 @@ enum Kind {
     Internal,
 }
 
+/// Gruplu hover'da gönderim sırasıyla sunucu ve yanıtı (`None`: henüz gelmedi ya da hata).
+type HoverSlots = Vec<(ServerKey, Option<Value>)>;
+
 struct Pending {
     kind: Kind,
     id: RequestId,
@@ -307,8 +310,9 @@ pub struct LspManager {
     /// Kapanmış sunucular (yeniden başlatılınca listeden çıkar).
     exited: Vec<ServerKey>,
     waker: Waker,
-    /// Birden çok sunucuya giden hover: kalan yanıt sayısı ve gelen sonuçlar (hepsi gelince tek yanıt olur).
-    hover_groups: HashMap<RequestId, (usize, Vec<Value>)>,
+    /// Birden çok sunucuya giden hover: kalan yanıt sayısı ve gönderim sırasıyla sunucu başına sonuç (hepsi gelince
+    /// bu sırayla tek yanıt olur; geliş sırası yarışa bağlı).
+    hover_groups: HashMap<RequestId, (usize, HoverSlots)>,
     /// jdtls'in Spring Boot projesi bulduğunu bildirdiği (`vscode-spring-boot.ls.start`) kökler.
     boot_roots: HashSet<PathBuf>,
 }
@@ -675,16 +679,16 @@ impl LspManager {
     pub fn hover(&mut self, path: &Path, pos: Position) -> Option<RequestId> {
         let params = Self::text_position(path, pos);
         let id = self.doc_request(path, "hoverProvider", "textDocument/hover", params.clone(), Kind::Hover)?;
-        let extras: Vec<ServerKey> = self.docs.get(path).map(|d| d.linters.clone()).unwrap_or_default();
-        let mut sent = 1;
+        let (main, extras) = self.docs.get(path).map(|d| (d.server.clone(), d.linters.clone())).unwrap_or_default();
+        let mut slots: HoverSlots = main.into_iter().map(|k| (k, None)).collect();
         for key in extras {
             if let Some(server) = self.servers.get_mut(&key).filter(|s| s.ready && s.supports("hoverProvider")) {
                 server.request("textDocument/hover", params.clone(), Kind::Hover, id);
-                sent += 1;
+                slots.push((key, None));
             }
         }
-        if sent > 1 {
-            self.hover_groups.insert(id, (sent, Vec::new()));
+        if slots.len() > 1 {
+            self.hover_groups.insert(id, (slots.len(), slots));
         }
         Some(id)
     }
@@ -693,13 +697,15 @@ impl LspManager {
     /// `false`.
     fn hover_part(&mut self, id: RequestId, key: &ServerKey, value: Option<Value>, events: &mut Vec<LspEvent>) -> bool {
         let Some((left, parts)) = self.hover_groups.get_mut(&id) else { return false };
-        parts.extend(value);
+        if let Some(slot) = parts.iter_mut().find(|(k, _)| k == key) {
+            slot.1 = value;
+        }
         *left -= 1;
         if *left == 0
             && let Some((_, parts)) = self.hover_groups.remove(&id)
         {
             let mut contents = Vec::new();
-            for part in parts {
+            for part in parts.into_iter().filter_map(|(_, v)| v) {
                 match &part["contents"] {
                     Value::Array(items) => contents.extend(items.iter().cloned()),
                     Value::Null => {}
