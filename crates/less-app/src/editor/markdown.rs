@@ -1,7 +1,7 @@
 //! Markdown önizlemesi (#83): `pulldown-cmark` olaylarından küçük bir blok ağacı kurulur, egui ile çizilir.
 //! Başlık, paragraf, vurgu, satır içi kod, kod bloğu, alıntı, liste (görev kutuları dahil), tablo, çizgi, bağlantı.
 
-use eframe::egui::{self, Align, Color32, FontId, Label, Layout, RichText, Sense, Stroke, Ui};
+use eframe::egui::{self, Align, Color32, FontId, Label, Layout, RichText, Sense, Shape, Stroke, Ui, vec2};
 use less_theme::Palette;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
@@ -304,23 +304,106 @@ fn draw_blocks(ui: &mut Ui, p: &Palette, blocks: &[Block], clicked: &mut Option<
                     });
                 }
             }
-            Block::Table(rows) => {
-                egui::Grid::new(ui.next_auto_id()).striped(true).spacing([16.0, 6.0]).show(ui, |ui| {
-                    for (r, row) in rows.iter().enumerate() {
-                        for cell in row {
-                            let runs: Vec<Inline> =
-                                cell.iter().map(|c| Inline { bold: c.bold || r == 0, ..c.clone() }).collect();
-                            inline(ui, p, &runs, BODY, clicked);
-                        }
-                        ui.end_row();
-                    }
-                });
-            }
+            Block::Table(rows) => table(ui, p, rows, clicked),
             Block::Rule => {
                 ui.separator();
             }
         }
     }
+}
+
+const TABLE_GAP: f32 = 16.0;
+const TABLE_PAD_Y: f32 = 4.0;
+const MIN_COL: f32 = 48.0;
+
+/// Tabloyu sütun genişliklerini kendisi hesaplayarak çizer.
+/// `egui::Grid` sarmalı hücrelere ilk karede sıfıra yakın genişlik verip onu hatırladığı için metin harf harf
+/// kırılıyordu; burada her sütun önce doğal (sarılmamış) genişliğiyle ölçülür, sığmazsa [`column_widths`] ile
+/// paylaştırılır ve hücreler o sabit genişlikte sarılır. Tek satırlar zebra, başlık altı çizgiyle ayrılır.
+fn table(ui: &mut Ui, p: &Palette, rows: &[Vec<Vec<Inline>>], clicked: &mut Option<String>) {
+    let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if cols == 0 {
+        return;
+    }
+    let mut natural = vec![0.0f32; cols];
+    for row in rows {
+        for (c, cell) in row.iter().enumerate() {
+            natural[c] = natural[c].max(runs_width(ui, cell, BODY));
+        }
+    }
+    let widths = column_widths(&natural, ui.available_width(), TABLE_GAP);
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (r, row) in rows.iter().enumerate() {
+            let bg = ui.painter().add(Shape::Noop);
+            let resp = ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
+                ui.spacing_mut().item_spacing.x = TABLE_GAP;
+                for (c, w) in widths.iter().enumerate() {
+                    ui.vertical(|ui| {
+                        ui.set_width(*w);
+                        ui.add_space(TABLE_PAD_Y);
+                        if let Some(cell) = row.get(c) {
+                            let runs: Vec<Inline> =
+                                cell.iter().map(|i| Inline { bold: i.bold || r == 0, ..i.clone() }).collect();
+                            inline(ui, p, &runs, BODY, clicked);
+                        }
+                        ui.add_space(TABLE_PAD_Y);
+                    });
+                }
+            });
+            let rect = resp.response.rect.expand2(vec2(TABLE_GAP / 2.0, 0.0));
+            if r % 2 == 1 {
+                ui.painter().set(bg, Shape::rect_filled(rect, 0.0, ui.visuals().faint_bg_color));
+            }
+            if r == 0 {
+                ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, color(p.border)));
+            }
+        }
+    });
+}
+
+/// Satır içi parçaların tek satırda kaplayacağı genişlik (sarma ve yuvarlama payıyla birlikte).
+fn runs_width(ui: &Ui, runs: &[Inline], size: f32) -> f32 {
+    let painter = ui.painter();
+    let w: f32 = runs
+        .iter()
+        .map(|r| {
+            let font = if r.code { FontId::monospace(size - 1.0) } else { FontId::proportional(size) };
+            painter.layout_no_wrap(r.text.clone(), font, Color32::WHITE).size().x
+        })
+        .sum();
+    w.ceil() + 1.0
+}
+
+/// Doğal sütun genişliklerini `avail` içine paylaştırır.
+/// Hepsi sığıyorsa aynen döner; sığmıyorsa adil paydan dar olan sütunlar doğal genişliğini korur, kalan alan
+/// geniş sütunlar arasında eşit bölünür (en az [`MIN_COL`]).
+/// Örnek: `[40, 300, 300]`, avail 400, gap 0 → `[40, 180, 180]`.
+fn column_widths(natural: &[f32], avail: f32, gap: f32) -> Vec<f32> {
+    let n = natural.len();
+    let budget = (avail - gap * n.saturating_sub(1) as f32).max(0.0);
+    if natural.iter().sum::<f32>() <= budget {
+        return natural.to_vec();
+    }
+    let mut fixed: Vec<Option<f32>> = vec![None; n];
+    let (mut left, mut open) = (budget, n);
+    loop {
+        let share = left / open as f32;
+        let mut changed = false;
+        for (slot, &w) in fixed.iter_mut().zip(natural) {
+            if slot.is_none() && w <= share {
+                *slot = Some(w);
+                left -= w;
+                open -= 1;
+                changed = true;
+            }
+        }
+        if !changed || open == 0 {
+            break;
+        }
+    }
+    let share = (left / open.max(1) as f32).max(MIN_COL);
+    fixed.into_iter().map(|w| w.unwrap_or(share)).collect()
 }
 
 /// Satır içi parçaları sarmalı akışla çizer; bağlantılar tıklanabilir.
@@ -385,6 +468,13 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(texts(&rows[1][1]), "2");
         assert_eq!(b[6], Block::Rule);
+    }
+
+    #[test]
+    fn table_column_widths() {
+        assert_eq!(column_widths(&[50.0, 60.0], 500.0, 16.0), vec![50.0, 60.0]);
+        assert_eq!(column_widths(&[40.0, 300.0, 300.0], 400.0, 0.0), vec![40.0, 180.0, 180.0]);
+        assert_eq!(column_widths(&[300.0, 300.0], 50.0, 0.0), vec![MIN_COL, MIN_COL]);
     }
 
     #[test]
