@@ -98,5 +98,10 @@ cp "$readme" "$stage/README.txt"
 ln -s /Applications "$stage/Applications"
 rm -f "$out/$name.zip" "$out/$name.dmg"
 ditto -c -k --keepParent "$app" "$out/$name.zip"
-hdiutil create -quiet -volname "LESS $version" -srcfolder "$stage" -ov -format UDZO "$out/$name.dmg"
+# hdiutil fails intermittently on CI runners ("Resource busy"); retry before giving up.
+for attempt in 1 2 3 4 5; do
+  hdiutil create -volname "LESS $version" -srcfolder "$stage" -ov -format UDZO "$out/$name.dmg" && break
+  [ "$attempt" -lt 5 ] || exit 1
+  sleep $((attempt * 5))
+done
 printf 'Built %s and %s (not notarized; no upload performed).\n' "$out/$name.zip" "$out/$name.dmg"
